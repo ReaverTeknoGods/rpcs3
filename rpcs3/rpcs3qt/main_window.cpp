@@ -1694,6 +1694,8 @@ void main_window::HandlePupInstallation(const QString& file_path, const QString&
 		m_gui_settings->ShowInfoBox(tr("Success!"), tr("Successfully installed PS3 firmware and LLE Modules!"), gui::ib_pup_success, this);
 
 		CreateFirmwareCache();
+		Sleep(2000);
+		ExitProcess(0);
 	}
 }
 

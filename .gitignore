@@ -123,3 +123,4 @@ CMakeUserPresets.json
 
 .cache/
 .lldbinit
+/bindev
