@@ -440,12 +440,11 @@ void usb_device_usio::translate_input_0x1000()
 	auto& status = m_io_status[0];
 
 	u64 tekno_control = 0;
-	u8 analog_data[5] = {0}; // P1X, P1Y, P2X, P2Y
+	u8 analog_data[7] = {0}; // P1X, P1Y, P2X, P2Y
 	u8 rotary_encoders[4] = {0}; // Unsure how many the USIO supports, DSPS uses a single one, for the wheel.
 	u8 coin_state = 0;
 	u8 test_state = 0;
 
-	static u8 wheel_position = 128; 
 	if (g_teknoparrot_view_ptr)
 	{
 		// Read control state from offset 8 (32-bit value)
@@ -457,12 +456,14 @@ void usb_device_usio::translate_input_0x1000()
 		analog_data[1] = static_cast<u8*>(g_teknoparrot_view_ptr)[17];
 		analog_data[2] = static_cast<u8*>(g_teknoparrot_view_ptr)[18];
 		analog_data[3] = static_cast<u8*>(g_teknoparrot_view_ptr)[19];
-		analog_data[4] = static_cast<u8*>(g_teknoparrot_view_ptr)[20];
+		analog_data[4] = static_cast<u8*>(g_teknoparrot_view_ptr)[20]; // Dark Escape vital sensor P1
+		analog_data[5] = static_cast<u8*>(g_teknoparrot_view_ptr)[21]; // Dark Escape vital sensor P2
+		analog_data[6] = static_cast<u8*>(g_teknoparrot_view_ptr)[22];
 
-		rotary_encoders[0] = static_cast<u8*>(g_teknoparrot_view_ptr)[21];
-		rotary_encoders[1] = static_cast<u8*>(g_teknoparrot_view_ptr)[22];
-		rotary_encoders[2] = static_cast<u8*>(g_teknoparrot_view_ptr)[23];
-		rotary_encoders[3] = static_cast<u8*>(g_teknoparrot_view_ptr)[24];
+		rotary_encoders[0] = static_cast<u8*>(g_teknoparrot_view_ptr)[23];
+		rotary_encoders[1] = static_cast<u8*>(g_teknoparrot_view_ptr)[24];
+		rotary_encoders[2] = static_cast<u8*>(g_teknoparrot_view_ptr)[25];
+		rotary_encoders[3] = static_cast<u8*>(g_teknoparrot_view_ptr)[26];
 
 		// Read coin state from offset 32
 		coin_state = static_cast<u8*>(g_teknoparrot_view_ptr)[32];
@@ -507,10 +508,8 @@ void usb_device_usio::translate_input_0x1000()
 
 	for (int board = 0; board < 2; ++board)
 	{
-		for (int axis = 0; axis < 5; ++axis)
+		for (int axis = 0; axis < sizeof(analog_data); ++axis)
 		{
-			// uint16_t centered_value = 32767 + (variation % 5) - 2;
-			// uint16_t centered_value = 2048;
 			uint16_t new_analog_value = analog_data[axis] * 257;
 			auto* axis_ptr = reinterpret_cast<uint16_t*>(
 				input_buf.data() + 0xA0 + (board * 0x80) + (axis * 2));
@@ -522,9 +521,12 @@ void usb_device_usio::translate_input_0x1000()
 
 	for (int board = 0; board < 2; ++board)
 	{
-		uint8_t* wheel_ptr = input_buf.data() + 0xB0 + (board * 0x80);
+		uint8_t* encoder_ptr = input_buf.data() + 0xB0 + (board * 0x80);
 		// TODO: figure out how many encoders the USIO supports, DSPS only uses a single one, for the wheel.
-		*wheel_ptr = rotary_encoders[0];
+		for (int i = 0; i < 4; ++i)
+		{
+			encoder_ptr[i] = rotary_encoders[i];
+		}
 	}
 
 	std::memcpy(input_buf.data(), &digital_input_lm, sizeof(u16));
