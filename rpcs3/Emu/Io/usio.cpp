@@ -264,6 +264,7 @@ void usb_device_usio::translate_input_0x1080()
 	std::vector<u8> input_buf(0x60);
 	constexpr le_t<u16> c_hit = 0x1800;
 	le_t<u16> digital_input = 0;
+	auto& status = m_io_status[0];
 
 	uint32_t tekno_control = 0;
 	uint8_t coin_state = 0;
@@ -291,29 +292,23 @@ void usb_device_usio::translate_input_0x1080()
 	if (tekno_control & 0x2000) // TeknoParrot P1 Down
 		digital_input |= 0x1000;
 
-	// Test button handling
-	if (tekno_control & 0x01)
-	{ // TeknoParrot Test
-		digital_input |= 0x80;
-	}
-
 	// Taiko drum hits - map TeknoParrot buttons to drum hits
 	// For multiple players, we use different button mappings and offsets
 	for (int player = 0; player < 2; player++)
 	{
 		const usz offset = player * 8ULL;
-		uint32_t player_buttons = 0;
+		//uint32_t player_buttons = 0;
 
-		if (player == 0)
-		{
-			// Player 1: Use primary buttons
-			player_buttons = tekno_control;
-		}
-		else
-		{
-			// Player 2: Use secondary buttons (shifted bits)
-			player_buttons = tekno_control >> 16; // Shift P2 buttons to lower positions
-		}
+		//if (player == 0)
+		//{
+		//	// Player 1: Use primary buttons
+		//	player_buttons = tekno_control;
+		//}
+		//else
+		//{
+		//	// Player 2: Use secondary buttons (shifted bits)
+		//	player_buttons = tekno_control >> 16; // Shift P2 buttons to lower positions
+		//}
 
 		// Map buttons to drum hits
 		// Button1 -> Left Don (Center Left)
@@ -331,6 +326,20 @@ void usb_device_usio::translate_input_0x1080()
 		// Button4 -> Right Ka (Side Right)
 		if ((player == 0 && (tekno_control & 0x80000)) || (player == 1 && (tekno_control & 0x800000)))
 			std::memcpy(input_buf.data() + 38 + offset, &c_hit, sizeof(u16));
+	}
+
+	bool test_pressed_now = tekno_control & 0x01;
+	if (test_pressed_now && !status.test_key_pressed)
+	{
+		// Key was just pressed this frame
+		status.test_on = !status.test_on;
+	}
+
+	status.test_key_pressed = test_pressed_now;
+
+	if (status.test_on)
+	{
+		digital_input |= 0x80;
 	}
 
 	bool coin_pressed_now = (coin_state != 0);
