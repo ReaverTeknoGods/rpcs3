@@ -11,6 +11,10 @@ namespace rpcs3
 		// Parse title format string
 		std::string title_string;
 
+		// Replacing the title so we can add it to hooked_windows.txt in TPUI
+		// although any other solution would be better...
+		title_string = "RPCS3 via TeknoParrot";
+		return title_string;
 		for (usz i = 0; i < title_data.format.size();)
 		{
 			const char c1 = title_data.format[i];

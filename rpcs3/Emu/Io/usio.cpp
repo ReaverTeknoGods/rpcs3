@@ -259,39 +259,41 @@ void usb_device_usio::save_backup()
 	usio_backup_file.trunc(file_size);
 }
 
-void usb_device_usio::translate_input_taiko()
+void usb_device_usio::translate_input_0x1080()
 {
 	std::vector<u8> input_buf(0x60);
 	constexpr le_t<u16> c_hit = 0x1800;
 	le_t<u16> digital_input = 0;
 
-#ifdef _WIN32
 	uint32_t tekno_control = 0;
 	uint8_t coin_state = 0;
+	uint8_t test_state = 0;
 
-	// Read TeknoParrot shared memory input state
 	if (g_teknoparrot_view_ptr)
 	{
 		// Read control state from offset 8 (32-bit value)
 		tekno_control = *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 8);
-		
+
 		// Read coin state from offset 32
-		coin_state = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 32);
+		coin_state = *static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 32;
+		// Read test state from offset 33
+		test_state = *static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 33;
 	}
 
 	// Map TeknoParrot bits to USIO Taiko format
 	// Basic controls
-	if (tekno_control & 0x02)     // TeknoParrot P1 Start/Enter
+	if (tekno_control & 0x02) // TeknoParrot P1 Start/Enter
 		digital_input |= 0x200;
-	if (tekno_control & 0x40)     // TeknoParrot P1 Service
+	if (tekno_control & 0x40) // TeknoParrot P1 Service
 		digital_input |= 0x4000;
-	if (tekno_control & 0x800)    // TeknoParrot P1 Up
+	if (tekno_control & 0x800) // TeknoParrot P1 Up
 		digital_input |= 0x2000;
-	if (tekno_control & 0x2000)   // TeknoParrot P1 Down
+	if (tekno_control & 0x2000) // TeknoParrot P1 Down
 		digital_input |= 0x1000;
 
 	// Test button handling
-	if (tekno_control & 0x01) {   // TeknoParrot Test
+	if (tekno_control & 0x01)
+	{ // TeknoParrot Test
 		digital_input |= 0x80;
 	}
 
@@ -301,11 +303,14 @@ void usb_device_usio::translate_input_taiko()
 	{
 		const usz offset = player * 8ULL;
 		uint32_t player_buttons = 0;
-		
-		if (player == 0) {
+
+		if (player == 0)
+		{
 			// Player 1: Use primary buttons
 			player_buttons = tekno_control;
-		} else {
+		}
+		else
+		{
 			// Player 2: Use secondary buttons (shifted bits)
 			player_buttons = tekno_control >> 16; // Shift P2 buttons to lower positions
 		}
@@ -314,21 +319,20 @@ void usb_device_usio::translate_input_taiko()
 		// Button1 -> Left Don (Center Left)
 		if ((player == 0 && (tekno_control & 0x04)) || (player == 1 && (tekno_control & 0x10)))
 			std::memcpy(input_buf.data() + 34 + offset, &c_hit, sizeof(u16));
-		
-		// Button2 -> Right Don (Center Right) 
+
+		// Button2 -> Right Don (Center Right)
 		if ((player == 0 && (tekno_control & 0x20)) || (player == 1 && (tekno_control & 0x80)))
 			std::memcpy(input_buf.data() + 36 + offset, &c_hit, sizeof(u16));
-		
+
 		// Button3 -> Left Ka (Side Left)
 		if ((player == 0 && (tekno_control & 0x200)) || (player == 1 && (tekno_control & 0x4000)))
 			std::memcpy(input_buf.data() + 32 + offset, &c_hit, sizeof(u16));
-		
+
 		// Button4 -> Right Ka (Side Right)
 		if ((player == 0 && (tekno_control & 0x80000)) || (player == 1 && (tekno_control & 0x800000)))
 			std::memcpy(input_buf.data() + 38 + offset, &c_hit, sizeof(u16));
 	}
 
-	// Handle coin input
 	bool coin_pressed_now = (coin_state != 0);
 	if (coin_pressed_now && !g_coin_pressed_prev)
 	{
@@ -337,7 +341,18 @@ void usb_device_usio::translate_input_taiko()
 	}
 	g_coin_pressed_prev = coin_pressed_now;
 
-#else
+	std::memcpy(input_buf.data(), &digital_input, sizeof(u16));
+	std::memcpy(input_buf.data() + 16, &m_io_status[0].coin_counter, sizeof(u16));
+
+	response = std::move(input_buf);
+}
+
+void usb_device_usio::translate_input_taiko()
+{
+	std::vector<u8> input_buf(0x60);
+	constexpr le_t<u16> c_hit = 0x1800;
+	le_t<u16> digital_input = 0;
+
 	// Fallback to original pad input system when not on Windows
 	std::lock_guard lock(pad::g_pad_mutex);
 	const auto handler = pad::get_pad_thread();
@@ -410,11 +425,110 @@ void usb_device_usio::translate_input_taiko()
 
 	for (usz i = 0; i < g_cfg_usio.players.size(); i++)
 		translate_from_pad(i, i);
-#endif
 
-	// Write output buffer (same for both TeknoParrot and pad input)
 	std::memcpy(input_buf.data(), &digital_input, sizeof(u16));
 	std::memcpy(input_buf.data() + 16, &m_io_status[0].coin_counter, sizeof(u16));
+
+	response = std::move(input_buf);
+}
+
+void usb_device_usio::translate_input_0x1000()
+{
+	std::vector<u8> input_buf(0x180); // 0x180 assuming ioboard count is 2 (0x80 per board + 1 main internal one?)
+	le_t<u64> digital_input[2]{};
+	le_t<u16> digital_input_lm = 0;
+	auto& status = m_io_status[0];
+
+	u64 tekno_control = 0;
+	u8 analog_data[5] = {0}; // P1X, P1Y, P2X, P2Y
+	u8 rotary_encoders[4] = {0}; // Unsure how many the USIO supports, DSPS uses a single one, for the wheel.
+	u8 coin_state = 0;
+	u8 test_state = 0;
+
+	static u8 wheel_position = 128; 
+	if (g_teknoparrot_view_ptr)
+	{
+		// Read control state from offset 8 (32-bit value)
+		tekno_control = *reinterpret_cast<u64*>(static_cast<u8*>(g_teknoparrot_view_ptr) + 8);
+		// TODO: Should we do another one for the second io board?
+
+		// Read analog data from offsets 12-16
+		analog_data[0] = static_cast<u8*>(g_teknoparrot_view_ptr)[16];     
+		analog_data[1] = static_cast<u8*>(g_teknoparrot_view_ptr)[17];
+		analog_data[2] = static_cast<u8*>(g_teknoparrot_view_ptr)[18];
+		analog_data[3] = static_cast<u8*>(g_teknoparrot_view_ptr)[19];
+		analog_data[4] = static_cast<u8*>(g_teknoparrot_view_ptr)[20];
+
+		rotary_encoders[0] = static_cast<u8*>(g_teknoparrot_view_ptr)[21];
+		rotary_encoders[1] = static_cast<u8*>(g_teknoparrot_view_ptr)[22];
+		rotary_encoders[2] = static_cast<u8*>(g_teknoparrot_view_ptr)[23];
+		rotary_encoders[3] = static_cast<u8*>(g_teknoparrot_view_ptr)[24];
+
+		// Read coin state from offset 32
+		coin_state = static_cast<u8*>(g_teknoparrot_view_ptr)[32];
+		test_state = static_cast<u8*>(g_teknoparrot_view_ptr)[33];
+	}
+
+	digital_input[0] = tekno_control;
+	bool test_pressed_now = test_state & 0x80;
+	if (test_pressed_now && !status.test_key_pressed)
+	{
+		// Key was just pressed this frame
+		status.test_on = !status.test_on;
+	}
+
+	status.test_key_pressed = test_pressed_now;
+
+	if (status.test_on)
+	{
+		digital_input[0] |= 0x80;
+		digital_input_lm |= 0x1000;
+	}
+
+	// Handle coin input
+	bool coin_pressed_now = (coin_state != 0);
+	if (coin_pressed_now && !g_coin_pressed_prev)
+	{
+		m_io_status[0].coin_counter++;
+		usio_log.notice("Coin inserted, counter now: %d", m_io_status[0].coin_counter);
+	}
+	g_coin_pressed_prev = coin_pressed_now;
+
+	for (usz i = 0; i < 2; i++)
+	{
+		//std::memcpy(input_buf.data() - i * 0x80 + 0x100, &digital_input[i], sizeof(u64));
+		//std::memcpy(input_buf.data() - i * 0x80 + 0x100 + 0x10, &m_io_status[i].coin_counter, sizeof(u16));
+		// Tekken, when using 2 ioboards has these flipped, but for now we're switching to 1 io board to make cross game controls easier
+		// So we're switching them up again (needed for razing storm etc)
+		// TODO: figure out if im being silly right now....
+		std::memcpy(input_buf.data() + 0x80 + i * 0x80, &digital_input[i], sizeof(u64));
+		std::memcpy(input_buf.data() + 0x80 + i * 0x80 + 0x10, &m_io_status[i].coin_counter, sizeof(u16));
+	}
+
+	for (int board = 0; board < 2; ++board)
+	{
+		for (int axis = 0; axis < 5; ++axis)
+		{
+			// uint16_t centered_value = 32767 + (variation % 5) - 2;
+			// uint16_t centered_value = 2048;
+			uint16_t new_analog_value = analog_data[axis] * 257;
+			auto* axis_ptr = reinterpret_cast<uint16_t*>(
+				input_buf.data() + 0xA0 + (board * 0x80) + (axis * 2));
+			*axis_ptr = new_analog_value;
+			//if (board == 0 && axis == 0)
+			//	usio_log.notice("Analog data board %d axis %d: %d", board, axis, new_analog_value);
+		}
+	}
+
+	for (int board = 0; board < 2; ++board)
+	{
+		uint8_t* wheel_ptr = input_buf.data() + 0xB0 + (board * 0x80);
+		// TODO: figure out how many encoders the USIO supports, DSPS only uses a single one, for the wheel.
+		*wheel_ptr = rotary_encoders[0];
+	}
+
+	std::memcpy(input_buf.data(), &digital_input_lm, sizeof(u16));
+	input_buf[2] = 0b00010000; // DIP switches, 8 in total
 
 	response = std::move(input_buf);
 }
@@ -425,103 +539,6 @@ void usb_device_usio::translate_input_tekken()
 	le_t<u64> digital_input[2]{};
 	le_t<u16> digital_input_lm = 0;
 
-#ifdef _WIN32
-	uint32_t tekno_control = 0;
-	uint8_t analog_data[5] = {0}; // P1X, P1Y, P2X, P2Y, DSPS Wheel
-	uint8_t coin_state = 0;
-
-	// Read TeknoParrot shared memory input state
-	if (g_teknoparrot_view_ptr)
-	{
-		// Read control state from offset 8 (32-bit value)
-		tekno_control = *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 8);
-		
-		// Read analog data from offsets 12-16
-		analog_data[0] = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 12); // P1X
-		analog_data[1] = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 13); // P1Y
-		analog_data[2] = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 14); // P2X
-		analog_data[3] = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 15); // P2Y
-		analog_data[4] = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 16); // DSPS Wheel
-		
-		// Read coin state from offset 32
-		coin_state = *reinterpret_cast<uint8_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 32);
-	}
-
-	// Map TeknoParrot bits to USIO format
-	// Player 1 mapping (no bit shifting)
-	if (tekno_control & 0x02)     // TeknoParrot P1 Start
-		digital_input[0] |= 0x800000ULL;  // USIO P1 Enter
-	if (tekno_control & 0x40)     // TeknoParrot P1 Service  
-		digital_input[0] |= 0x4000;       // USIO P1 Service
-	if (tekno_control & 0x04)     // TeknoParrot P1 Button1
-		digital_input[0] |= 0x20000ULL;   // USIO P1 Tekken Button1
-	if (tekno_control & 0x20)     // TeknoParrot P1 Button2
-		digital_input[0] |= 0x10000ULL;   // USIO P1 Tekken Button2
-	if (tekno_control & 0x200)    // TeknoParrot P1 Button3
-		digital_input[0] |= 0x40000000ULL; // USIO P1 Tekken Button3
-	if (tekno_control & 0x80000)  // TeknoParrot P1 Button4
-		digital_input[0] |= 0x20000000ULL; // USIO P1 Tekken Button4
-	if (tekno_control & 0x100000) // TeknoParrot P1 Button5
-		digital_input[0] |= 0x80000000ULL; // USIO P1 Tekken Button5
-	if (tekno_control & 0x400)    // TeknoParrot P1 Left
-		digital_input[0] |= 0x80000ULL;   // USIO P1 Left
-	if (tekno_control & 0x1000)   // TeknoParrot P1 Right
-		digital_input[0] |= 0x40000ULL;   // USIO P1 Right
-	if (tekno_control & 0x800)    // TeknoParrot P1 Up
-		digital_input[0] |= 0x200000ULL;  // USIO P1 Up
-	if (tekno_control & 0x2000)   // TeknoParrot P1 Down
-		digital_input[0] |= 0x100000ULL;  // USIO P1 Down
-
-	// Player 2 mapping (24-bit shifted)
-	const u64 p2_shift = 24ULL;
-	if (tekno_control & 0x08)      // TeknoParrot P2 Start
-		digital_input[0] |= 0x800000ULL << p2_shift;  // USIO P2 Enter
-	if (tekno_control & 0x100)     // TeknoParrot P2 Service
-		digital_input[0] |= 0x4000ULL << p2_shift;    // USIO P2 Service
-	if (tekno_control & 0x10)      // TeknoParrot P2 Button1
-		digital_input[0] |= 0x20000ULL << p2_shift;   // USIO P2 Tekken Button1
-	if (tekno_control & 0x80)      // TeknoParrot P2 Button2
-		digital_input[0] |= 0x10000ULL << p2_shift;   // USIO P2 Tekken Button2
-	if (tekno_control & 0x4000)    // TeknoParrot P2 Button3
-		digital_input[0] |= 0x40000000ULL << p2_shift; // USIO P2 Tekken Button3
-	if (tekno_control & 0x800000)  // TeknoParrot P2 Button4
-		digital_input[0] |= 0x20000000ULL << p2_shift; // USIO P2 Tekken Button4
-	if (tekno_control & 0x1000000) // TeknoParrot P2 Button5
-		digital_input[0] |= 0x80000000ULL << p2_shift; // USIO P2 Tekken Button5
-	if (tekno_control & 0x8000)    // TeknoParrot P2 Left
-		digital_input[0] |= 0x80000ULL << p2_shift;    // USIO P2 Left
-	if (tekno_control & 0x20000)   // TeknoParrot P2 Right
-		digital_input[0] |= 0x40000ULL << p2_shift;    // USIO P2 Right
-	if (tekno_control & 0x10000)   // TeknoParrot P2 Up
-		digital_input[0] |= 0x200000ULL << p2_shift;   // USIO P2 Up
-	if (tekno_control & 0x40000)   // TeknoParrot P2 Down
-		digital_input[0] |= 0x100000ULL << p2_shift;   // USIO P2 Down
-
-	// Legacy mapping for digital_input_lm (Player 1 only)
-	if (tekno_control & 0x02)   digital_input_lm |= 0x800;  // P1 Start
-	if (tekno_control & 0x800)  digital_input_lm |= 0x200;  // P1 Up
-	if (tekno_control & 0x2000) digital_input_lm |= 0x400;  // P1 Down
-	if (tekno_control & 0x400)  digital_input_lm |= 0x2000; // P1 Left
-	if (tekno_control & 0x1000) digital_input_lm |= 0x4000; // P1 Right
-	if (tekno_control & 0x04)   digital_input_lm |= 0x100;  // P1 Button1
-
-	// Test button handling
-	if (tekno_control & 0x01) {  // TeknoParrot Test
-		digital_input[0] |= 0x80;
-		digital_input_lm |= 0x1000;
-	}
-
-	// Handle coin input
-	bool coin_pressed_now = (coin_state != 0);
-	if (coin_pressed_now && !g_coin_pressed_prev)
-	{
-		m_io_status[0].coin_counter++;
-		usio_log.trace("Coin inserted, counter now: %d", m_io_status[0].coin_counter);
-	}
-	g_coin_pressed_prev = coin_pressed_now;
-
-#else
-	// Fallback to original pad input system when not on Windows
 	std::lock_guard lock(pad::g_pad_mutex);
 	const auto handler = pad::get_pad_thread();
 
@@ -636,9 +653,7 @@ void usb_device_usio::translate_input_tekken()
 
 	for (usz i = 0; i < g_cfg_usio.players.size(); i++)
 		translate_from_pad(i, i);
-#endif
 
-	// Write output buffer (same for both TeknoParrot and pad input)
 	for (usz i = 0; i < 2; i++)
 	{
 		std::memcpy(input_buf.data() - i * 0x80 + 0x100, &digital_input[i], sizeof(u64));
@@ -698,6 +713,12 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 			usio_log.trace("SetHopperRequest(Hopper: %d, Limit: 0x%04X)", (reg - 0x4A) / 0x10, get_u16("SetHopperLimit"));
 			break;
 		}
+		case 0x14000:
+		{
+			// for razing storm, LED outputs in the test menu seem to change the bytes at [0x10] and [0x11]
+			usio_log.trace("SetLed");
+			break;
+		}
 		default:
 		{
 			usio_log.trace("Unhandled channel 0 register write(reg: 0x%04X, size: 0x%04X, data: %s)", reg, data.size(), fmt::buf_to_hexstring(data.data(), data.size()));
@@ -711,7 +732,7 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 		usio_log.trace("Usio write of sram(page: 0x%02X, addr: 0x%04X, size: 0x%04X, data: %s)", page, reg, data.size(), fmt::buf_to_hexstring(data.data(), data.size()));
 		auto& memory = g_fxo->get<usio_memory>().backup_memory;
 		const usz addr_end = reg + data.size();
-		if (data.size() > 0 && page < usio_memory::page_count && addr_end <= usio_memory::page_size)
+		if (!data.empty() && page < usio_memory::page_count && addr_end <= usio_memory::page_size)
 			std::memcpy(&memory[usio_memory::page_size * page + reg], data.data(), data.size());
 		else
 			usio_log.error("Usio sram invalid write operation(page: 0x%02X, addr: 0x%04X, size: 0x%04X, data: %s)", page, reg, data.size(), fmt::buf_to_hexstring(data.data(), data.size()));
@@ -736,6 +757,8 @@ void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
 			// First U16 seems to be a timestamp of sort
 			// Purpose seems related to connectivity check
 			response = {0x7E, 0xE4, 0x00, 0x00, 0x74, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+			// io board count
+			response[34] = 0x01;
 			break;
 		}
 		case 0x0080:
@@ -753,13 +776,21 @@ void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
 		case 0x1000:
 		{
 			// Often called, gets input from usio for Tekken
+#ifdef _WIN32
+			translate_input_0x1000();
+#else
 			translate_input_tekken();
+#endif
 			break;
 		}
 		case 0x1080:
 		{
 			// Often called, gets input from usio for Taiko
+#ifdef _WIN32
+			translate_input_0x1080();
+#else
 			translate_input_taiko();
+#endif
 			break;
 		}
 		case 0x1800:
