@@ -550,6 +550,8 @@ void gs_frame::toggle_recording()
 
 void gs_frame::toggle_mouselock()
 {
+	// stub.
+	return;
 	// first we toggle the value
 	m_mouse_hide_and_lock = !m_mouse_hide_and_lock;
 
@@ -561,26 +563,29 @@ void gs_frame::update_cursor()
 {
 	bool show_mouse;
 
-	if (!isActive())
-	{
-		// Show the mouse by default if this is not the active window
-		show_mouse = true;
-	}
-	else if (m_hide_mouse_after_idletime && !m_mousehide_timer.isActive())
-	{
-		// Hide the mouse if the idle timeout was reached (which means that the timer isn't running)
-		show_mouse = false;
-	}
-	else if (visibility() == Visibility::FullScreen)
-	{
-		// Fullscreen: Show or hide the mouse depending on the settings.
-		show_mouse = m_show_mouse_in_fullscreen;
-	}
-	else
-	{
-		// Windowed: Hide the mouse if it was locked by the user
-		show_mouse = !m_mouse_hide_and_lock;
-	}
+	//if (!isActive())
+	//{
+	//	// Show the mouse by default if this is not the active window
+	//	show_mouse = true;
+	//}
+	//else if (m_hide_mouse_after_idletime && !m_mousehide_timer.isActive())
+	//{
+	//	// Hide the mouse if the idle timeout was reached (which means that the timer isn't running)
+	//	show_mouse = false;
+	//}
+	//else if (visibility() == Visibility::FullScreen)
+	//{
+	//	// Fullscreen: Show or hide the mouse depending on the settings.
+	//	show_mouse = m_show_mouse_in_fullscreen;
+	//}
+	//else
+	//{
+	//	// Windowed: Hide the mouse if it was locked by the user
+	//	show_mouse = !m_mouse_hide_and_lock;
+	//}
+
+	// override for now
+	show_mouse = false;
 
 	// Update Cursor if necessary
 	if (show_mouse != m_show_mouse.exchange(show_mouse))
