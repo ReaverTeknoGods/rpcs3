@@ -1082,6 +1082,8 @@ void gs_frame::take_screenshot(std::vector<u8>&& data, u32 sshot_width, u32 ssho
 
 void gs_frame::mouseDoubleClickEvent(QMouseEvent* ev)
 {
+	// Force disable this
+	return;
 	if (m_disable_mouse)
 	{
 		return;
