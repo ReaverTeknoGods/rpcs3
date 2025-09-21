@@ -272,13 +272,9 @@ void usb_device_usio::translate_input_0x1080()
 
 	if (g_teknoparrot_view_ptr)
 	{
-		// Read control state from offset 8 (32-bit value)
 		tekno_control = *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 8);
 
-		// Read coin state from offset 32
-		coin_state = *static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 32;
-		// Read test state from offset 33
-		test_state = *static_cast<uint8_t*>(g_teknoparrot_view_ptr) + 33;
+		coin_state = static_cast<u8*>(g_teknoparrot_view_ptr)[32];
 	}
 
 	// Map TeknoParrot bits to USIO Taiko format
