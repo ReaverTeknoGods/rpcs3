@@ -4,10 +4,10 @@
 IDI_ICON1 ICON "rpcs3.ico"
 frame_icon ICON "rpcs3.ico"
 
-#define VER_FILEVERSION             1,0,0,0
-#define VER_FILEVERSION_STR         "1.0.0.0\0"
-#define VER_PRODUCTVERSION          1,0,0,0
-#define VER_PRODUCTVERSION_STR      "1.0.0\0"
+#define VER_FILEVERSION             1,0,0,2
+#define VER_FILEVERSION_STR         "1.0.0.2\0"
+#define VER_PRODUCTVERSION          1,0,0,2
+#define VER_PRODUCTVERSION_STR      "1.0.0.2\0"
 
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION     VER_FILEVERSION
