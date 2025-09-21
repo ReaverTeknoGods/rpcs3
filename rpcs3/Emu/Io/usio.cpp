@@ -740,7 +740,10 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 		auto& memory = g_fxo->get<usio_memory>().backup_memory;
 		const usz addr_end = reg + data.size();
 		if (!data.empty() && page < usio_memory::page_count && addr_end <= usio_memory::page_size)
+		{
 			std::memcpy(&memory[usio_memory::page_size * page + reg], data.data(), data.size());
+			save_backup();
+		}
 		else
 			usio_log.error("Usio sram invalid write operation(page: 0x%02X, addr: 0x%04X, size: 0x%04X, data: %s)", page, reg, data.size(), fmt::buf_to_hexstring(data.data(), data.size()));
 	}
