@@ -266,6 +266,7 @@ namespace gui
 	const gui_save gs_height            = gui_save(gs_frame, "height",                720);
 	const gui_save gs_hideMouseIdle     = gui_save(gs_frame, "hideMouseOnIdle",       false);
 	const gui_save gs_hideMouseIdleTime = gui_save(gs_frame, "hideMouseOnIdleTime",   2000);
+	const gui_save gs_hideMouseGlobal   = gui_save(gs_frame, "hideMouseGlobal",		  false);
 	const gui_save gs_geometry          = gui_save(gs_frame, "geometry",              QRect());
 	const gui_save gs_visibility        = gui_save(gs_frame, "visibility",            QWindow::Visibility::AutomaticVisibility);
 

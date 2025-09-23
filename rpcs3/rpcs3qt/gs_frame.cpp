@@ -175,6 +175,7 @@ void gs_frame::load_gui_settings()
 	m_lock_mouse_in_fullscreen  = m_gui_settings->GetValue(gui::gs_lockMouseFs).toBool();
 	m_hide_mouse_after_idletime = m_gui_settings->GetValue(gui::gs_hideMouseIdle).toBool();
 	m_hide_mouse_idletime = m_gui_settings->GetValue(gui::gs_hideMouseIdleTime).toUInt();
+	m_hide_mouse_global = m_gui_settings->GetValue(gui::gs_hideMouseGlobal).toBool();
 
 	if (m_disable_kb_hotkeys)
 	{
@@ -563,29 +564,36 @@ void gs_frame::update_cursor()
 {
 	bool show_mouse;
 
-	//if (!isActive())
-	//{
-	//	// Show the mouse by default if this is not the active window
-	//	show_mouse = true;
-	//}
-	//else if (m_hide_mouse_after_idletime && !m_mousehide_timer.isActive())
-	//{
-	//	// Hide the mouse if the idle timeout was reached (which means that the timer isn't running)
-	//	show_mouse = false;
-	//}
-	//else if (visibility() == Visibility::FullScreen)
-	//{
-	//	// Fullscreen: Show or hide the mouse depending on the settings.
-	//	show_mouse = m_show_mouse_in_fullscreen;
-	//}
-	//else
-	//{
-	//	// Windowed: Hide the mouse if it was locked by the user
-	//	show_mouse = !m_mouse_hide_and_lock;
-	//}
+	if (!isActive())
+	{
+		// Show the mouse by default if this is not the active window
+		show_mouse = true;
+	}
+	else if (m_hide_mouse_after_idletime && !m_mousehide_timer.isActive())
+	{
+		// Hide the mouse if the idle timeout was reached (which means that the timer isn't running)
+		show_mouse = false;
+	}
+	else if (visibility() == Visibility::FullScreen)
+	{
+		// Fullscreen: Show or hide the mouse depending on the settings.
+		show_mouse = m_show_mouse_in_fullscreen;
+	}
+	else
+	{
+		// Windowed: Hide the mouse if it was locked by the user
+		show_mouse = !m_mouse_hide_and_lock;
+	}
 
-	// override for now
-	show_mouse = false;
+	// TP specific global setting to make the mouse always hidden (or visible)
+	if (m_hide_mouse_global)
+	{
+		show_mouse = false;
+	}
+	else
+	{
+		show_mouse = true;
+	}
 
 	// Update Cursor if necessary
 	if (show_mouse != m_show_mouse.exchange(show_mouse))
