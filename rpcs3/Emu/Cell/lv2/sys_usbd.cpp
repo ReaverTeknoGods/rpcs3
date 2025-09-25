@@ -344,6 +344,9 @@ static void LIBUSB_CALL log_cb(libusb_context* /*ctx*/, enum libusb_log_level le
 
 void usb_handler_thread::perform_scan()
 {
+	// this can sometimes freeze
+	// and we don't really need usb support in our fork so let's just stub it
+	return;
 	// look if any device which we could be interested in is actually connected
 	libusb_device** list = nullptr;
 	const ssize_t ndev   = libusb_get_device_list(ctx, &list);
@@ -1468,6 +1471,7 @@ error_code sys_usbd_transfer_data(ppu_thread& ppu, u32 handle, u32 id_pipe, vm::
 		if (!(pipe.endpoint & 0x80))
 			sys_usbd.trace("Write Int(s: %d):\n%s", buf_size, fmt::buf_to_hexstring(buf.get_ptr(), buf_size));
 
+		//sys_usbd.notice("Interrupt transfer for id_pipe=0x%x", id_pipe);
 		pipe.device->interrupt_transfer(buf_size, buf.get_ptr(), pipe.endpoint, &transfer);
 	}
 
