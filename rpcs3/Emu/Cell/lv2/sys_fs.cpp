@@ -13,6 +13,7 @@
 #include "Emu/IdManager.h"
 #include "Emu/system_utils.hpp"
 #include "Emu/Cell/lv2/sys_process.h"
+#include "Emu/Cell/lv2/sys_usbd.h"
 
 #include <filesystem>
 #include <span>
@@ -1532,6 +1533,18 @@ error_code sys_fs_stat(ppu_thread& ppu, vm::cptr<char> path, vm::ptr<CellFsStat>
 		sb->size = 258;
 		sb->blksize = 512;
 		return CELL_OK;
+	}
+
+	// When the USBMEM LDD is loaded, the filesystem on the USB Drive gets unmounted
+	// If this isn't handled, T6 and T6BR will end on a USB KEY ERROR
+	if (mp == &g_mp_sys_dev_usb)
+	{
+		// TODO: see if we can rewrite this so it checks for VID/PID instead of fake unmounting every usb drive
+		if (is_usb_ldd_registered("PS3A-USBMEM"))
+		{
+			sys_fs.warning("sys_fs_stat(): USB device accessed but USBMEM LDD registered");
+			return {sys_fs.warning, CELL_ENOTMOUNTED, path};
+		}
 	}
 
 	if (local_path.empty())

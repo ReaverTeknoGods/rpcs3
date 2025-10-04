@@ -30,6 +30,8 @@ private:
 	bool is_used = false;
 	const std::string usio_backup_path = rpcs3::utils::get_hdd1_dir() + "/caches/usiobackup.bin";
 	std::vector<u8> response;
+	u16 expansion_mode = 0x8000;
+	std::array<u16, 4> hoppers = {0x0080, 0, 0, 0};
 
 	struct io_status
 	{
