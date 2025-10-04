@@ -86,21 +86,15 @@ bool cfg_input::load(const std::string& title_id, const std::string& config_file
 
 	from_default();
 
-	if (fs::file cfg_file{ cfg_name, fs::read })
+	// Always force all players to use null handlers because it will conflict with the TPUI pipe stuff
+	// (A lot of lightguns and whatnot use keyboard bindings)
+	for (int i = 0; i < 7; i++)
 	{
-		input_log.notice("Loading input configuration: '%s'", cfg_name);
-
-		if (const std::string content = cfg_file.to_string(); !content.empty())
-		{
-			return from_string(content);
-		}
+		player[i]->handler.from_string(fmt::format("%s", pad_handler::null));
+		player[i]->device.from_string("");
+		player[i]->buddy_device.from_string("");
+		player[i]->config.from_default();
 	}
-
-	// Add keyboard by default
-	input_log.notice("Input configuration empty. Adding default keyboard pad handler");
-	player[0]->handler.from_string(fmt::format("%s", pad_handler::keyboard));
-	player[0]->device.from_string(pad::keyboard_device_name.data());
-	player[0]->buddy_device.from_string(""sv);
 
 	return false;
 }
