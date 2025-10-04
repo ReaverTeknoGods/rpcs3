@@ -752,7 +752,7 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 
 void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
 {
-	usio_log.notice("Usio read from channel 0x%02X(reg: 0x%04X, size: 0x%04X)", channel, reg, size);
+	//usio_log.notice("Usio read from channel 0x%02X(reg: 0x%04X, size: 0x%04X)", channel, reg, size);
 	if (channel == 0)
 	{
 		switch (reg)
