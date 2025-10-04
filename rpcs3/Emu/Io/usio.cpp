@@ -985,7 +985,7 @@ void usb_device_usio::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, Us
 
 		if ((buf[0] & USIO_COMMAND_WRITE) == USIO_COMMAND_WRITE)
 		{
-			usio_log.trace("UsioWrite(Channel: 0x%02X, Register: 0x%04X, Length: 0x%04X)", usio_channel, usio_register, usio_length);
+			//usio_log.trace("UsioWrite(Channel: 0x%02X, Register: 0x%04X, Length: 0x%04X)", usio_channel, usio_register, usio_length);
 			if (((~(usio_register >> 8)) & 0xF0) != buf[1])
 			{
 				usio_log.error("Invalid UsioWrite command");
@@ -996,14 +996,14 @@ void usb_device_usio::interrupt_transfer(u32 buf_size, u8* buf, u32 endpoint, Us
 		}
 		else if ((buf[0] & USIO_COMMAND_READ) == USIO_COMMAND_READ)
 		{
-			usio_log.trace("UsioRead(Channel: 0x%02X, Register: 0x%04X, Length: 0x%04X)", usio_channel, usio_register, usio_length);
+			//usio_log.trace("UsioRead(Channel: 0x%02X, Register: 0x%04X, Length: 0x%04X)", usio_channel, usio_register, usio_length);
 			response_seek = 0;
 			response.clear();
 			usio_read(usio_channel, usio_register, usio_length);
 		}
 		else if ((buf[0] & USIO_COMMAND_INIT) == USIO_COMMAND_INIT)
 		{
-			usio_log.trace("UsioInit(Channel: 0x%02X, Register: 0x%04X, Length: 0x%04X)", usio_channel, usio_register, usio_length);
+			//usio_log.trace("UsioInit(Channel: 0x%02X, Register: 0x%04X, Length: 0x%04X)", usio_channel, usio_register, usio_length);
 			usio_init(usio_channel, usio_register, usio_length);
 		}
 		else
