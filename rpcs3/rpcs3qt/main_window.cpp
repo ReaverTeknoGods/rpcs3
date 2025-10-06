@@ -183,6 +183,37 @@ main_window::~main_window()
 {
 }
 
+typedef void (*TPSetTitleID_t)(const char*);
+
+bool main_window::LoadFFBBlaster(std::string title_id)
+{
+	// could do with checking TP Config here somehow for FFBBlaster
+	std::string ffbBlasterPath = fs::get_executable_dir();
+	ffbBlasterPath = fs::get_parent_dir(ffbBlasterPath) + "/FFBBlaster/x64/FFBlaster64.dll";
+	HMODULE ffbBlasterH = LoadLibraryA(ffbBlasterPath.c_str());
+	if (ffbBlasterH)
+	{
+		FARPROC ffbBlasterSetTitleIDPtr = GetProcAddress(ffbBlasterH, "TPSetTitleID");
+
+		if (ffbBlasterSetTitleIDPtr)
+		{
+			TPSetTitleID_t TPSetTitleID = reinterpret_cast<TPSetTitleID_t>(ffbBlasterSetTitleIDPtr);
+			TPSetTitleID(title_id.c_str());
+		}
+	}
+	return true;
+}
+
+void main_window::UnloadFFBBlaster()
+{
+	HMODULE ffbBlasterH = GetModuleHandleA("FFBBlaster.dll");
+	if (ffbBlasterH)
+	{
+		FreeLibrary(ffbBlasterH);
+	}
+	return;
+}
+
 /* An init method is used so that RPCS3App can create the necessary connects before calling init (specifically the stylesheet connect).
  * Simplifies logic a bit.
  */
@@ -530,6 +561,8 @@ void main_window::Boot(const std::string& path, const std::string& title_id, boo
 	{
 		return;
 	}
+
+	LoadFFBBlaster(title_id);
 
 	Emu.GracefulShutdown(false);
 
@@ -1964,6 +1997,8 @@ void main_window::OnEmuPause() const
 
 void main_window::OnEmuStop()
 {
+	UnloadFFBBlaster();
+
 	const QString title = GetCurrentTitle();
 	const QString play_tooltip = tr("Play %0").arg(title);
 
