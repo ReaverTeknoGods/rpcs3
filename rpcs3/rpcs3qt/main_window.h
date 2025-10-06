@@ -143,6 +143,9 @@ private:
 	void ShowTitleBars(bool show) const;
 	void ShowOptionalGamePreparations(const QString& title, const QString& message, std::map<std::string, QString> game_path);
 
+	bool LoadFFBBlaster(std::string title_id);
+	void UnloadFFBBlaster();
+
 	static bool InstallFileInExData(const std::string& extension, const QString& path, const std::string& filename);
 
 	bool HandlePackageInstallation(QStringList file_paths, bool from_boot);
