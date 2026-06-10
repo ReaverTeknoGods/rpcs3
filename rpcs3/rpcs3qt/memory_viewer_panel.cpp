@@ -20,6 +20,7 @@
 #include <QWheelEvent>
 #include <QHoverEvent>
 #include <QMouseEvent>
+#include <QCloseEvent>
 #include <QTimer>
 #include <QThread>
 #include <QKeyEvent>
@@ -289,7 +290,7 @@ memory_viewer_panel::memory_viewer_panel(QWidget* parent, std::shared_ptr<CPUDis
 	QPushButton* button_collapse_viewer = new QPushButton(reinterpret_cast<const char*>(u8"Ʌ"), group_search);
 	button_collapse_viewer->setFixedWidth(QLabel(button_collapse_viewer->text()).sizeHint().width() * 3);
 	button_collapse_viewer->setAutoDefault(false);
-	
+
 	m_search_line = new QLineEdit(group_search);
 	m_search_line->setFixedWidth(QLabel(QString("This is the very length of the lineedit due to hidpi reasons.").chopped(4)).sizeHint().width());
 	m_search_line->setPlaceholderText(tr("Search..."));
@@ -327,7 +328,7 @@ memory_viewer_panel::memory_viewer_panel(QWidget* parent, std::shared_ptr<CPUDis
 		tooltip.append(tr("\nSPU Instruction: Search an SPU instruction contains the text of the string. For searching instructions within embedded SPU images.\nTip: SPU floats are commented along forming instructions."));
 	}
 
-	connect(m_cbox_input_mode, QOverload<int>::of(&QComboBox::currentIndexChanged), group_search, [this, button_search](int index)
+	connect(m_cbox_input_mode, &QComboBox::currentIndexChanged, group_search, [this, button_search](int index)
 	{
 		if (index < 1 || m_rsx)
 		{
@@ -431,9 +432,9 @@ memory_viewer_panel::memory_viewer_panel(QWidget* parent, std::shared_ptr<CPUDis
 
 		scroll(0); // Refresh
 	});
-	connect(sb_words, static_cast<void (QSpinBox::*)(int)>(&QSpinBox::valueChanged), this, [=, this]()
+	connect(sb_words, &QSpinBox::valueChanged, this, [this](int value)
 	{
-		m_colcount = 1 << sb_words->value();
+		m_colcount = 1 << value;
 		ShowMemory();
 	});
 
@@ -503,6 +504,8 @@ memory_viewer_panel::memory_viewer_panel(QWidget* parent, std::shared_ptr<CPUDis
 
 			m_search_thread = QThread::create([this, wstr, m_modes = m_modes]()
 			{
+				thread_base::set_name("MemViewerSearch");
+
 				gui_log.notice("Searching for %s (mode: %s)", wstr, m_modes);
 
 				u64 found = 0;
@@ -732,7 +735,7 @@ void* memory_viewer_panel::to_ptr(u32 addr, u32 size) const
 	}
 	case thread_class::spu:
 	{
-		if (size <= SPU_LS_SIZE && SPU_LS_SIZE - size >= (addr % SPU_LS_SIZE))
+		if (m_spu_shm && size <= SPU_LS_SIZE && SPU_LS_SIZE - size >= (addr % SPU_LS_SIZE))
 		{
 			return m_spu_shm->map_self() + (addr % SPU_LS_SIZE);
 		}
@@ -959,6 +962,14 @@ void memory_viewer_panel::keyPressEvent(QKeyEvent* event)
 	}
 
 	QDialog::keyPressEvent(event);
+}
+
+void memory_viewer_panel::closeEvent(QCloseEvent* event)
+{
+	event->accept();
+	m_spu_shm.reset();
+	m_disasm.reset();
+	m_get_cpu = [](){ return std::add_pointer_t<cpu_thread>{}; };
 }
 
 void memory_viewer_panel::ShowImage(QWidget* parent, u32 addr, color_format format, u32 width, u32 height, bool flipv) const
@@ -1296,7 +1307,7 @@ void memory_viewer_panel::ShowAtPC(u32 pc, std::function<cpu_thread*()> func)
 
 				if (!panel->isVisible())
 					panel->show();
-				
+
 				panel->raise();
 
 				return;

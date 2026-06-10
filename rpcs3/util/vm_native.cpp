@@ -253,7 +253,11 @@ namespace utils
 
 #ifdef __APPLE__
 #ifdef ARCH_ARM64
-		auto ptr = ::mmap(use_addr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | MAP_JIT | c_map_noreserve, -1, 0);
+		// Memory mapping regions will be replaced by file-backed MAP_FIXED mappings
+		// (via shm::map), which is incompatible with MAP_JIT. Only use MAP_JIT for
+		// non-mapping regions that need JIT executable support.
+		const int jit_flag = is_memory_mapping ? 0 : MAP_JIT;
+		auto ptr = ::mmap(use_addr, size, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE | jit_flag | c_map_noreserve, -1, 0);
 #else
 		auto ptr = ::mmap(use_addr, size, PROT_NONE, MAP_ANON | MAP_PRIVATE | MAP_JIT | c_map_noreserve, -1, 0);
 #endif
@@ -536,21 +540,33 @@ namespace utils
 		{
 			f.close();
 
-			for (u32 try_count = 3, i = 0; !f && i < try_count; i++)
+			for (u32 i = 1; i <= 3; i++)
+			{
+				// Cleanup
+				fs::remove_file(fmt::format("%s.%d.tmp", path, i));
+			}
+
+			for (u32 try_count = 3, i = 0; !f && i < try_count; i++, ::Sleep(100))
 			{
 				// Bug workaround: removing old file may be safer than rewriting it
 				if (!fs::remove_file(path) && fs::g_tls_error != fs::error::noent)
 				{
-					return false;
+					// Try MoveFile
+					fs::rename(path, fmt::format("%s.%d.tmp", path, i + 1), true);
 				}
 
-				if (!f.open(path, fs::read + fs::write + fs::create + fs::excl) && fs::g_tls_error != fs::error::exist)
+				if (f.open(path, fs::read + fs::write + fs::create + fs::excl))
+				{
+					return true;
+				}
+
+				if (fs::g_tls_error != fs::error::exist && fs::g_tls_error != fs::error::acces)
 				{
 					return false;
 				}
 			}
 
-			return f.operator bool();
+			return false;
 		};
 
 		std::string storage1 = fs::get_temp_dir();

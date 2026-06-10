@@ -1,6 +1,6 @@
 #include "atomic.hpp"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #define USE_FUTEX
 #elif !defined(_WIN32)
 #define USE_STD
@@ -49,6 +49,11 @@ static bool has_waitv()
 #include <cstdint>
 #include <array>
 #include <random>
+#include <climits>
+
+#ifdef __linux__
+#include <pthread.h>
+#endif
 
 #include "asm.hpp"
 #include "endian.hpp"

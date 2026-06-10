@@ -259,6 +259,10 @@ rsx_debugger::rsx_debugger(std::shared_ptr<gui_settings> gui_settings, QWidget* 
 	for (u32 i = 0; i < frame_debug.command_queue.size(); i++)
 		m_list_captured_frame->insertRow(i);
 
+	// Fill the draw calls
+	for (u32 i = 0; i < frame_debug.draw_calls.size(); i++)
+		m_list_captured_draw_calls->insertRow(i);
+
 	restoreGeometry(m_gui_settings->GetValue(gui::rsx_geometry).toByteArray());
 
 	// Check for updates every ~100 ms
@@ -1252,8 +1256,8 @@ void rsx_debugger::GetVertexProgram() const
 		rsx::method_registers.clip_planes_mask()
 	};
 
-	vp_blob.resize(vp_blob.size() + vp.data.size());
-	std::copy(vp.data.begin(), vp.data.end(), vp_blob.begin() + 14);
+	vp_blob.reserve(vp_blob.size() + vp.data.size());
+	vp_blob.insert(vp_blob.end(), vp.data.begin(), vp.data.end());
 
 	std::span<u32> vp_binary(vp_blob);
 	CgBinaryDisasm vp_disasm(vp_binary);

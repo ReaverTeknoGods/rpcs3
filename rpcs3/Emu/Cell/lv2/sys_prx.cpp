@@ -63,8 +63,8 @@ extern const std::map<std::string_view, int> g_prx_list
 	{ "libcelpenc.sprx", 0 },
 	{ "libddpdec.sprx", 0 },
 	{ "libdivxdec.sprx", 0 },
-	{ "libdmux.sprx", 0 },
-	{ "libdmuxpamf.sprx", 0 },
+	{ "libdmux.sprx", 1 },
+	{ "libdmuxpamf.sprx", 1 },
 	{ "libdtslbrdec.sprx", 0 },
 	{ "libfiber.sprx", 0 },
 	{ "libfont.sprx", 0 },
@@ -237,7 +237,7 @@ static error_code prx_load_module(const std::string& vpath, u64 flags, vm::ptr<s
 
 		sys_prx.warning("Ignored module: \"%s\" (id=0x%x)", vpath, idm::last_id());
 
-		return not_an_error(idm::last_id());
+		return not_an_error(idm::last_id<lv2_prx>());
 	};
 
 	if (ignore)
@@ -300,7 +300,7 @@ static error_code prx_load_module(const std::string& vpath, u64 flags, vm::ptr<s
 
 	sys_prx.success("Loaded module: \"%s\" (id=0x%x)", vpath, idm::last_id());
 
-	return not_an_error(idm::last_id());
+	return not_an_error(idm::last_id<lv2_prx>());
 }
 
 fs::file make_file_view(fs::file&& file, u64 offset, u64 size);
@@ -310,8 +310,8 @@ std::function<void(void*)> lv2_prx::load(utils::serial& ar)
 	[[maybe_unused]] const s32 version = GET_SERIALIZATION_VERSION(lv2_prx_overlay);
 
 	const std::string path = vfs::get(ar.pop<std::string>());
-	const s64 offset = ar;
-	const u32 state = ar;
+	const s64 offset{ar};
+	const u32 state{ar};
 
 	usz seg_count = 0;
 	ar.deserialize_vle(seg_count);
@@ -358,7 +358,7 @@ std::function<void(void*)> lv2_prx::load(utils::serial& ar)
 			for (usz i = 0; i < seg_count; i++)
 			{
 				auto& seg = prx->segs.emplace_back();
-				seg.addr = ar;
+				ar(seg.addr);
 				seg.size = 1; // TODO
 			}
 		}
@@ -899,7 +899,7 @@ error_code _sys_prx_register_library(ppu_thread& ppu, vm::ptr<void> library)
 			{
 				for (u32 lib_addr = prx.exports_start, index = 0; lib_addr < prx.exports_end; index++, lib_addr += vm::read8(lib_addr) ? vm::read8(lib_addr) : sizeof_lib)
 				{
-					if (std::memcpy(vm::base(lib_addr), mem_copy.data(), sizeof_lib) == 0)
+					if (std::memcmp(vm::base(lib_addr), mem_copy.data(), sizeof_lib) == 0)
 					{
 						atomic_storage<char>::release(prx.m_external_loaded_flags[index], true);
 						return true;

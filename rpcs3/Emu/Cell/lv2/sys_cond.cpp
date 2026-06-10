@@ -59,6 +59,7 @@ CellError lv2_cond::on_id_create()
 		if (!mutex)
 		{
 			_mutex = static_cast<shared_ptr<lv2_obj>>(ensure(idm::get_unlocked<lv2_obj, lv2_mutex>(mtx_id)));
+			mutex = static_cast<lv2_mutex*>(_mutex.get());
 		}
 
 		// Defer function
@@ -113,7 +114,7 @@ error_code sys_cond_create(ppu_thread& ppu, vm::ptr<u32> cond_id, u32 mutex_id, 
 	}
 
 	ppu.check_state();
-	*cond_id = idm::last_id();
+	*cond_id = idm::last_id<lv2_cond>();
 	return CELL_OK;
 }
 

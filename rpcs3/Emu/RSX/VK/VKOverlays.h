@@ -132,6 +132,8 @@ namespace vk
 		areaf m_clip_region;
 		coordf m_viewport;
 
+		rsx::overlays::compiled_resource::sdf_config_t m_sdf_config{};
+
 		std::vector<std::unique_ptr<vk::image>> resources;
 		std::unordered_map<u64, std::unique_ptr<vk::image>> font_cache;
 		std::unordered_map<u64, std::unique_ptr<vk::image_view>> view_cache;
@@ -153,8 +155,8 @@ namespace vk
 
 		void remove_temp_resources(u32 key);
 
-		vk::image_view* find_font(rsx::overlays::font* font, vk::command_buffer& cmd, vk::data_heap& upload_heap);
-		vk::image_view* find_temp_image(rsx::overlays::image_info_base* desc, vk::command_buffer& cmd, vk::data_heap& upload_heap, u32 owner_uid);
+		vk::image_view* find_font(const rsx::overlays::font* font, vk::command_buffer& cmd, vk::data_heap& upload_heap);
+		vk::image_view* find_temp_image(const rsx::overlays::image_info_base* desc, vk::command_buffer& cmd, vk::data_heap& upload_heap, u32 owner_uid);
 
 		std::vector<vk::glsl::program_input> get_vertex_inputs() override;
 		std::vector<vk::glsl::program_input> get_fragment_inputs() override;
@@ -207,9 +209,18 @@ namespace vk
 				int   limit_range;
 				int   stereo_display_mode;
 				int   stereo_image_count;
+				color4_base<float> left_anaglyph_matrix[3];
+				color4_base<float> right_anaglyph_matrix[3];
 			};
 
-			float data[4];
+			float data[(
+				sizeof(gamma) +
+				sizeof(limit_range) +
+				sizeof(stereo_display_mode) +
+				sizeof(stereo_image_count) +
+				sizeof(left_anaglyph_matrix) +
+				sizeof(right_anaglyph_matrix)
+				) / sizeof(float)];
 		}
 		config = {};
 
@@ -221,7 +232,7 @@ namespace vk
 
 		void run(vk::command_buffer& cmd, const areau& viewport, vk::framebuffer* target,
 			const rsx::simple_array<vk::viewable_image*>& src, f32 gamma, bool limited_rgb,
-			bool stereo_enabled, stereo_render_mode_options stereo_mode, VkRenderPass render_pass);
+			bool stereo_enabled, VkRenderPass render_pass);
 	};
 
 	// TODO: Replace with a proper manager

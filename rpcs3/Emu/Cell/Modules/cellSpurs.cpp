@@ -1230,7 +1230,7 @@ s32 _spurs::initialize(ppu_thread& ppu, vm::ptr<CellSpurs> spurs, u32 revision, 
 	if (flags & SAF_UNKNOWN_FLAG_9)          spuTgAttr->type |= 0x0800;
 	if (flags & SAF_SYSTEM_WORKLOAD_ENABLED) spuTgAttr->type |= SYS_SPU_THREAD_GROUP_TYPE_COOPERATE_WITH_SYSTEM;
 
-	if (s32 rc = sys_spu_thread_group_create(ppu, spurs.ptr(&CellSpurs::spuTG), nSpus, spuPriority, spuTgAttr))
+	if (s32 rc = sys_spu_thread_group_create(ppu, spurs.ptr(&CellSpurs::spuTG), nSpus, spuPriority, vm::unsafe_ptr_cast<reduced_sys_spu_thread_group_attribute>(spuTgAttr)))
 	{
 		ppu_execute<&sys_spu_image_close>(ppu, spurs.ptr(&CellSpurs::spuImg));
 		return rollback(), rc;
@@ -1436,6 +1436,13 @@ s32 cellSpursInitializeWithAttribute2(ppu_thread& ppu, vm::ptr<CellSpurs> spurs,
 		attr.ptr(&CellSpursAttribute::swlPriority, 0),
 		attr->swlMaxSpu,
 		attr->swlIsPreem);
+}
+
+// Initialise SPURS
+s32 cellSpursInitializeForSpuSharing()
+{
+	cellSpurs.todo("cellSpursInitializeForSpuSharing()");
+	return CELL_OK;
 }
 
 /// Initialise SPURS attribute
@@ -5390,6 +5397,7 @@ DECLARE(ppu_module_manager::cellSpurs)("cellSpurs", [](ppu_static_module* _this)
 	REG_FUNC(cellSpurs, cellSpursInitialize);
 	REG_FUNC(cellSpurs, cellSpursInitializeWithAttribute);
 	REG_FUNC(cellSpurs, cellSpursInitializeWithAttribute2);
+	REG_FUNC(cellSpurs, cellSpursInitializeForSpuSharing);
 	REG_FUNC(cellSpurs, cellSpursFinalize);
 	REG_FUNC(cellSpurs, _cellSpursAttributeInitialize);
 	REG_FUNC(cellSpurs, cellSpursAttributeSetMemoryContainerForSpuThread);

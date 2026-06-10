@@ -132,7 +132,7 @@ namespace rsx
 			switch (button_press)
 			{
 			case pad_button::circle:
-				Emu.GetCallbacks().play_sound(fs::get_config_dir() + "sounds/snd_cancel.wav");
+				play_sound(sound_effect::cancel);
 				close_dialog = true;
 				break;
 			case pad_button::square:
@@ -172,7 +172,7 @@ namespace rsx
 			// Play a sound unless this is a fast auto repeat which would induce a nasty noise
 			else if (!is_auto_repeat || m_auto_repeat_ms_interval >= m_auto_repeat_ms_interval_default)
 			{
-				Emu.GetCallbacks().play_sound(fs::get_config_dir() + "sounds/snd_cursor.wav");
+				play_sound(sound_effect::cursor);
 			}
 		}
 
@@ -421,7 +421,7 @@ namespace rsx
 				m_list->select_entry(selected_index);
 			}
 
-			m_description->set_text(get_localized_string(localized_string_id::HOME_MENU_TROPHY_LIST_TITLE, fmt::format("%d%% (%d/%d)", percentage, unlocked_trophies, all_trophies).c_str()));
+			m_description->set_text(get_localized_string(localized_string_id::HOME_MENU_TROPHY_LIST_TITLE, "%d%% (%d/%d)", percentage, unlocked_trophies, all_trophies));
 			m_description->auto_resize();
 		}
 	} // namespace overlays

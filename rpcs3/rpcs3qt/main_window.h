@@ -10,7 +10,9 @@
 #include "update_manager.h"
 #include "settings.h"
 #include "shortcut_handler.h"
+#include "shortcut_utils.h"
 #include "Emu/config_mode.h"
+#include "Emu/System.h"
 
 #include <memory>
 
@@ -68,13 +70,13 @@ class main_window : public QMainWindow
 	};
 
 public:
-	explicit main_window(std::shared_ptr<gui_settings> gui_settings, std::shared_ptr<emu_settings> emu_settings, std::shared_ptr<persistent_settings> persistent_settings, QWidget *parent = nullptr);
+	explicit main_window(std::shared_ptr<gui_settings> gui_settings, std::shared_ptr<emu_settings> emu_settings, std::shared_ptr<persistent_settings> persistent_settings, QWidget* parent = nullptr);
 	~main_window();
 	bool Init(bool with_cli_boot);
 	QIcon GetAppIcon() const;
 	void OnMissingFw();
-	bool InstallPackages(QStringList file_paths = {}, bool from_boot = false);
-	void InstallPup(QString file_path = "");
+	static bool InstallPackages(main_window* mw, QStringList file_paths = {}, bool from_boot = false);
+	static void InstallPup(main_window* mw, QString file_path = "");
 
 Q_SIGNALS:
 	void RequestLanguageChange(const QString& language);
@@ -87,9 +89,9 @@ Q_SIGNALS:
 public Q_SLOTS:
 	void OnEmuStop();
 	void OnEmuRun(bool start_playtime);
-	void OnEmuResume() const;
-	void OnEmuPause() const;
-	void OnEmuReady() const;
+	void OnEmuResume();
+	void OnEmuPause();
+	void OnEmuReady();
 	void OnEnableDiscEject(bool enabled) const;
 	void OnEnableDiscInsert(bool enabled) const;
 	void OnAddBreakpoint(u32 addr) const;
@@ -103,6 +105,7 @@ private Q_SLOTS:
 	void BootElf();
 	void BootTest();
 	void BootGame();
+	void BootISO();
 	void BootVSH();
 	void BootSavestate();
 	void BootRsxCapture(std::string path = "");
@@ -113,9 +116,6 @@ private Q_SLOTS:
 	void SetIconSizeActions(int idx) const;
 	void ResizeIcons(int index);
 
-	void RemoveHDD1Caches();
-	void RemoveAllCaches();
-	void RemoveSavestates();
 	void CleanUpGameList();
 
 	void RemoveFirmwareCache();
@@ -130,24 +130,24 @@ protected:
 	void dropEvent(QDropEvent* event) override;
 	void dragEnterEvent(QDragEnterEvent* event) override;
 	void dragMoveEvent(QDragMoveEvent* event) override;
-	void dragLeaveEvent(QDragLeaveEvent* event) override;
 
 private:
 	void ConfigureGuiFromSettings();
 	void RepaintToolBarIcons();
-	void RepaintThumbnailIcons();
 	void CreateActions();
 	void CreateConnects();
 	void CreateDockWindows();
 	void EnableMenus(bool enabled) const;
 	void ShowTitleBars(bool show) const;
+	void PrecompileCachesFromInstalledPackages(const std::map<std::string, QString>& bootable_paths);
 	void ShowOptionalGamePreparations(const QString& title, const QString& message, std::map<std::string, QString> game_path);
 
+	void CreateShortCuts(const std::map<std::string, QString>& paths, std::set<gui::utils::shortcut_location> locations);
+
 	static bool InstallFileInExData(const std::string& extension, const QString& path, const std::string& filename);
+	static bool HandlePackageInstallation(main_window* mw, QStringList file_paths, bool from_boot);
+	static void HandlePupInstallation(main_window* mw, const QString& file_path, const QString& dir_path = "");
 
-	bool HandlePackageInstallation(QStringList file_paths, bool from_boot);
-
-	void HandlePupInstallation(const QString& file_path, const QString& dir_path = "");
 	void ExtractPup();
 
 	void ExtractTar();
@@ -194,9 +194,10 @@ private:
 	std::shared_ptr<persistent_settings> m_persistent_settings;
 
 	update_manager m_updater;
-	QAction* m_download_menu_action = nullptr;
 
 	shortcut_handler* m_shortcut_handler = nullptr;
 
 	std::unique_ptr<gui_pad_thread> m_gui_pad_thread;
+
+	system_state m_system_state = system_state::stopped;
 };

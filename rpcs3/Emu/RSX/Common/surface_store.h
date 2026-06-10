@@ -9,12 +9,13 @@
 #include <list>
 
 #include "util/asm.hpp"
+#include "util/pair.hpp"
 
 namespace rsx
 {
 	namespace utility
 	{
-		std::vector<u8> get_rtt_indexes(surface_target color_target);
+		rsx::simple_array<u8> get_rtt_indexes(surface_target color_target);
 		u8 get_mrt_buffers_count(surface_target color_target);
 		usz get_aligned_pitch(surface_color_format format, u32 width);
 		usz get_packed_pitch(surface_color_format format, u32 width);
@@ -131,7 +132,7 @@ namespace rsx
 					free_rsx_memory(Traits::get(sink));
 				}
 
-				Traits::clone_surface(cmd, sink, region.source, new_address, region);
+				Traits::clone_surface(cmd, sink, region.source, new_address, region, region.source->resolution_scaling_config);
 				allocate_rsx_memory(Traits::get(sink));
 
 				if (invalidated) [[unlikely]]
@@ -244,10 +245,9 @@ namespace rsx
 		template <bool is_depth_surface>
 		void intersect_surface_region(command_list_type cmd, u32 address, surface_type new_surface, surface_type prev_surface)
 		{
-			auto scan_list = [&new_surface, address](const rsx::address_range32& mem_range,
-				surface_ranged_map& data) -> std::vector<std::pair<u32, surface_type>>
+			auto scan_list = [&new_surface, address](const rsx::address_range32& mem_range, surface_ranged_map& data)
 			{
-				std::vector<std::pair<u32, surface_type>> result;
+				rsx::simple_array<utils::pair<u32, surface_type>> result;
 				for (auto it = data.begin_range(mem_range); it != data.end(); ++it)
 				{
 					auto surface = Traits::get(it->second);
@@ -314,7 +314,7 @@ namespace rsx
 				}
 			}
 
-			std::vector<std::pair<u32, surface_type>> surface_info;
+			rsx::simple_array<utils::pair<u32, surface_type>> surface_info;
 			if (list1.empty())
 			{
 				surface_info = std::move(list2);
@@ -398,6 +398,7 @@ namespace rsx
 			surface_antialiasing antialias,
 			usz width, usz height, usz pitch,
 			u8 bpp,
+			const rsx::surface_scaling_config_t& scaling_config,
 			Args&&... extra_params)
 		{
 			surface_storage_type old_surface_storage;
@@ -448,7 +449,7 @@ namespace rsx
 					}
 				}
 
-				if (Traits::surface_matches_properties(surface, format, width, height, antialias))
+				if (Traits::surface_matches_properties(surface, format, width, height, antialias, scaling_config))
 				{
 					if (!pitch_compatible)
 					{
@@ -495,7 +496,7 @@ namespace rsx
 				for (auto It = invalidated_resources.begin(); It != invalidated_resources.end(); It++)
 				{
 					auto &surface = *It;
-					if (Traits::surface_matches_properties(surface, format, width, height, antialias, true))
+					if (Traits::surface_matches_properties(surface, format, width, height, antialias, scaling_config, true))
 					{
 						new_surface_storage = std::move(surface);
 						Traits::notify_surface_reused(new_surface_storage);
@@ -531,7 +532,7 @@ namespace rsx
 			if (!new_surface)
 			{
 				ensure(store);
-				new_surface_storage = Traits::create_new_surface(address, format, width, height, pitch, antialias, std::forward<Args>(extra_params)...);
+				new_surface_storage = Traits::create_new_surface(address, format, width, height, pitch, antialias, scaling_config, std::forward<Args>(extra_params)...);
 				new_surface = Traits::get(new_surface_storage);
 				Traits::prepare_surface_for_drawing(command_list, new_surface);
 				allocate_rsx_memory(new_surface);
@@ -629,7 +630,7 @@ namespace rsx
 			invalidated_resources.push_back(std::move(storage));
 		}
 
-		int remove_duplicates_fast_impl(std::vector<surface_overlap_info>& sections, const rsx::address_range32& range)
+		int remove_duplicates_fast_impl(rsx::simple_array<surface_overlap_info>& sections, const rsx::address_range32& range)
 		{
 			// Range tests to check for gaps
 			std::list<utils::address_range32> m_ranges;
@@ -697,7 +698,7 @@ namespace rsx
 			return removed_count;
 		}
 
-		void remove_duplicates_fallback_impl(std::vector<surface_overlap_info>& sections, const rsx::address_range32& range)
+		void remove_duplicates_fallback_impl(rsx::simple_array<surface_overlap_info>& sections, const rsx::address_range32& range)
 		{
 			// Originally used to debug crashes but this function breaks often enough that I'll leave the checks in for now.
 			// Safe to remove after some time if no asserts are reported.
@@ -842,11 +843,13 @@ namespace rsx
 			surface_color_format color_format,
 			surface_antialiasing antialias,
 			usz width, usz height, usz pitch,
+			const rsx::surface_scaling_config_t& scaling_config,
 			Args&&... extra_params)
 		{
 			return bind_surface_address<false>(
 				command_list, address, color_format, antialias,
 				width, height, pitch, get_format_block_size_in_bytes(color_format),
+				scaling_config,
 				std::forward<Args>(extra_params)...);
 		}
 
@@ -857,19 +860,21 @@ namespace rsx
 			surface_depth_format2 depth_format,
 			surface_antialiasing antialias,
 			usz width, usz height, usz pitch,
+			const rsx::surface_scaling_config_t& scaling_config,
 			Args&&... extra_params)
 		{
 			return bind_surface_address<true>(
 				command_list, address, depth_format, antialias,
 				width, height, pitch,
 				get_format_block_size_in_bytes(depth_format),
+				scaling_config,
 				std::forward<Args>(extra_params)...);
 		}
 
-		std::tuple<std::vector<surface_type>, std::vector<surface_type>>
+		std::tuple<rsx::simple_array<surface_type>, rsx::simple_array<surface_type>>
 		find_overlapping_set(const utils::address_range32& range) const
 		{
-			std::vector<surface_type> color_result, depth_result;
+			rsx::simple_array<surface_type> color_result, depth_result;
 			utils::address_range32 result_range;
 
 			if (m_render_targets_memory_range.valid() &&
@@ -916,8 +921,8 @@ namespace rsx
 			u64 src_offset, dst_offset, write_length;
 			auto block_length = block_range.length();
 
-			auto all_data = std::move(color_data);
-			all_data.insert(all_data.end(), depth_stencil_data.begin(), depth_stencil_data.end());
+			auto& all_data = color_data;
+			all_data += depth_stencil_data;
 
 			if (all_data.size() > 1)
 			{
@@ -969,6 +974,7 @@ namespace rsx
 			surface_raster_type raster_type,
 			const std::array<u32, 4> &surface_addresses, u32 address_z,
 			const std::array<u32, 4> &surface_pitch, u32 zeta_pitch,
+			const rsx::surface_scaling_config_t& scaling_config,
 			Args&&... extra_params)
 		{
 			u32 clip_width = clip_horizontal_reg;
@@ -998,7 +1004,7 @@ namespace rsx
 
 					m_bound_render_targets[surface_index] = std::make_pair(surface_addresses[surface_index],
 						bind_address_as_render_targets(command_list, surface_addresses[surface_index], color_format, antialias,
-							clip_width, clip_height, surface_pitch[surface_index], std::forward<Args>(extra_params)...));
+							clip_width, clip_height, surface_pitch[surface_index], scaling_config, std::forward<Args>(extra_params)...));
 
 					m_bound_render_target_ids.push_back(surface_index);
 				}
@@ -1014,7 +1020,7 @@ namespace rsx
 			{
 				m_bound_depth_stencil = std::make_pair(address_z,
 					bind_address_as_depth_stencil(command_list, address_z, depth_format, antialias,
-						clip_width, clip_height, zeta_pitch, std::forward<Args>(extra_params)...));
+						clip_width, clip_height, zeta_pitch, scaling_config, std::forward<Args>(extra_params)...));
 			}
 			else
 			{
@@ -1088,10 +1094,10 @@ namespace rsx
 		}
 
 		template <typename commandbuffer_type>
-		std::vector<surface_overlap_info> get_merged_texture_memory_region(commandbuffer_type& cmd, u32 texaddr, u32 required_width, u32 required_height, u32 required_pitch, u8 required_bpp, rsx::surface_access access)
+		rsx::simple_array<surface_overlap_info> get_merged_texture_memory_region(commandbuffer_type& cmd, u32 texaddr, u32 required_width, u32 required_height, u32 required_pitch, u8 required_bpp, rsx::surface_access access)
 		{
-			std::vector<surface_overlap_info> result;
-			std::vector<std::pair<u32, bool>> dirty;
+			rsx::simple_array<surface_overlap_info> result;
+			rsx::simple_array<utils::pair<u32, bool>> dirty;
 
 			const auto surface_internal_pitch = (required_width * required_bpp);
 
@@ -1219,7 +1225,7 @@ namespace rsx
 
 			if (result.size() > 1)
 			{
-				std::sort(result.begin(), result.end(), [](const auto &a, const auto &b)
+				result.sort([](const auto &a, const auto &b)
 				{
 					if (a.surface->last_use_tag == b.surface->last_use_tag)
 					{
@@ -1236,7 +1242,7 @@ namespace rsx
 			return result;
 		}
 
-		void check_for_duplicates(std::vector<surface_overlap_info>& sections)
+		void check_for_duplicates(rsx::simple_array<surface_overlap_info>& sections)
 		{
 			utils::address_range32 test_range;
 			for (const auto& section : sections)
@@ -1461,6 +1467,114 @@ namespace rsx
 					// We didn't release enough resources, scan the active RTTs as well
 					collapse_dirty_surfaces(cmd, memory_pressure);
 				}
+			}
+		}
+
+		void sync_scaling_config(command_list_type cmd, const rsx::surface_scaling_config_t& active_config)
+		{
+			auto process_list_function = [&](surface_ranged_map& data, const utils::address_range32& range)
+			{
+				std::vector<surface_type> surfaces_to_clone;
+
+				for (auto It = data.begin_range(range); It != data.end();)
+				{
+					auto surface = Traits::get(It->second);
+					if (surface->get_resolution_scaling_config() == active_config)
+					{
+						++It;
+						continue;
+					}
+
+					// Perform a test scaling and check if anything is different after scaling
+					// There are many cases where this will avoid creating new surfaces
+					const auto [new_w, new_h] = rsx::apply_resolution_scale<true>(
+						active_config,
+						surface->template get_surface_width<>(),
+						surface->template get_surface_height<>());
+
+					if (new_w == surface->width() && new_h == surface->height())
+					{
+						// Not affected by resolution scale. Just update the details and move on.
+						surface->resolution_scaling_config = active_config;
+						++It;
+						continue;
+					}
+
+					surfaces_to_clone.push_back(surface);
+
+					// Invalidate the previous surface
+					invalidate(It->second);
+					It = data.erase(It);
+				}
+
+				for (auto& surface : surfaces_to_clone)
+				{
+					// Enqueue the memory transfer
+					surface_storage_type sink{};
+					deferred_clipped_region<surface_type> copy{};
+					copy.width = surface->template get_surface_width<>();
+					copy.height = surface->template get_surface_height<>();
+					copy.transfer_scale_x = 1.f;
+					copy.transfer_scale_y = 1.f;
+					copy.target = nullptr;
+					copy.source = surface;
+
+					Traits::clone_surface(cmd, sink, surface, surface->base_addr, copy, active_config);
+					allocate_rsx_memory(Traits::get(sink));
+
+					// Replace with the new one
+					auto new_surface = Traits::get(sink);
+					ensure(copy.target == new_surface);
+					data.emplace(surface->get_memory_range(), std::move(sink));
+
+					// Force barrier to reduce VRAM pressure
+					new_surface->memory_barrier(cmd, rsx::surface_access::memory_read);
+				}
+			};
+
+			const auto rtt_bind_backup = m_bound_render_targets;
+			const auto dsv_bind_backup = m_bound_depth_stencil;
+
+			// Unbind everything. We'll restore it later
+			for (auto& rtt_bind : m_bound_render_targets)
+			{
+				rtt_bind = {};
+			}
+
+			m_bound_depth_stencil = {};
+
+			process_list_function(m_render_targets_storage, m_render_targets_memory_range);
+			process_list_function(m_depth_stencil_storage, m_depth_stencil_memory_range);
+
+			// Restore bindings.
+			for (int i = 0; i < 4; ++i)
+			{
+				const auto address = rtt_bind_backup[i].first;
+				if (!address)
+				{
+					continue;
+				}
+
+				auto rtt = m_render_targets_storage.find(address);
+				ensure(rtt != m_render_targets_storage.end());
+
+				m_bound_render_targets[i] =
+				{
+					address,
+					Traits::get(rtt->second)
+				};
+			}
+
+			if (const auto ds_address = dsv_bind_backup.first)
+			{
+				auto ds = m_depth_stencil_storage.find(ds_address);
+				ensure(ds != m_depth_stencil_storage.end());
+
+				m_bound_depth_stencil =
+				{
+					ds_address,
+					Traits::get(ds->second)
+				};
 			}
 		}
 	};

@@ -129,16 +129,27 @@ void cheat_engine::save() const
 	cheat_file.write(out.c_str(), out.size());
 }
 
-void cheat_engine::import_cheats_from_str(const std::string& str_cheats)
+bool cheat_engine::import_cheats_from_str(std::string_view str_cheats)
 {
-	auto cheats_vec = fmt::split(str_cheats, {"^^^"});
+	const auto cheats_vec = fmt::split_sv(str_cheats, {"^^^"});
 
-	for (auto& cheat_line : cheats_vec)
+	std::vector<cheat_info> valid_cheats;
+
+	for (const auto& cheat_line : cheats_vec)
 	{
 		cheat_info new_cheat;
-		if (new_cheat.from_str(cheat_line))
-			cheats[new_cheat.game][new_cheat.offset] = new_cheat;
+		if (!new_cheat.from_str(cheat_line))
+			return false;
+
+		valid_cheats.push_back(std::move(new_cheat));
 	}
+
+	for (const cheat_info& new_cheat : valid_cheats)
+	{
+		cheats[new_cheat.game][new_cheat.offset] = new_cheat;
+	}
+
+	return true;
 }
 
 std::string cheat_engine::export_cheats_to_str() const
@@ -677,7 +688,7 @@ cheat_manager_dialog::cheat_manager_dialog(QWidget* parent)
 			{
 				const int row = sel->row();
 
-				if (rows.count(row))
+				if (rows.contains(row))
 					continue;
 
 				g_cheat.erase(tbl_cheats->item(row, cheat_table_columns::title)->text().toStdString(), tbl_cheats->item(row, cheat_table_columns::offset)->data(Qt::UserRole).toUInt());
@@ -690,7 +701,11 @@ cheat_manager_dialog::cheat_manager_dialog(QWidget* parent)
 		connect(import_cheats, &QAction::triggered, [this]()
 		{
 			QClipboard* clipboard = QGuiApplication::clipboard();
-			g_cheat.import_cheats_from_str(clipboard->text().toStdString());
+			if (!g_cheat.import_cheats_from_str(clipboard->text().toStdString()))
+			{
+				QMessageBox::warning(this, tr("Failure"), tr("Failed to import cheats."));
+				return;
+			}
 			update_cheat_list();
 		});
 
@@ -769,7 +784,7 @@ cheat_manager_dialog::cheat_manager_dialog(QWidget* parent)
 		}
 
 		// TODO: better way to do this?
-		switch (static_cast<cheat_type>(cbx_cheat_search_type->currentIndex()))
+		switch (cheat->type)
 		{
 		case cheat_type::unsigned_8_cheat: results = convert_and_set<u8>(final_offset); break;
 		case cheat_type::unsigned_16_cheat: results = convert_and_set<u16>(final_offset); break;
@@ -1062,7 +1077,5 @@ QString cheat_manager_dialog::get_localized_cheat_type(cheat_type type)
 	case cheat_type::float_32_cheat: return tr("Float 32 bits");
 	case cheat_type::max: break;
 	}
-	std::string type_formatted;
-	fmt::append(type_formatted, "%s", type);
-	return QString::fromStdString(type_formatted);
+	return QString::fromStdString(fmt::format("%s", type));
 }

@@ -74,6 +74,7 @@ struct music_decode
 			cellMusicDecode.notice("set_decode_command(START): context: %s", current_selection_context.to_string());
 
 			music_selection_context context = current_selection_context;
+			context.current_track = context.first_track;
 
 			for (usz i = 0; i < context.playlist.size(); i++)
 			{
@@ -90,6 +91,7 @@ struct music_decode
 		case CELL_MUSIC_DECODE_CMD_PREV:
 		{
 			decoder.stop();
+			read_pos = 0;
 
 			if (decoder.set_next_index(command == CELL_MUSIC_DECODE_CMD_NEXT) == umax)
 			{
@@ -134,7 +136,7 @@ error_code cell_music_decode_select_contents()
 	const std::string vfs_dir_path = vfs::get("/dev_hdd0/music");
 	const std::string title = get_localized_string(localized_string_id::RSX_OVERLAYS_MEDIA_DIALOG_TITLE);
 
-	error_code error = rsx::overlays::show_media_list_dialog(rsx::overlays::media_list_dialog::media_type::audio, vfs_dir_path, title,
+	error_code error = rsx::overlays::show_media_list_dialog(rsx::overlays::media_list_dialog::media_type::audio, music_selection_context::max_depth, vfs_dir_path, title,
 		[&dec](s32 status, utils::media_info info)
 		{
 			sysutil_register_cb([&dec, info = std::move(info), status](ppu_thread& ppu) -> s32
@@ -195,9 +197,10 @@ error_code cell_music_decode_read(vm::ptr<void> buf, vm::ptr<u32> startTime, u64
 
 	if (dec.decoder.m_size == 0)
 	{
-		return CELL_MUSIC_DECODE_ERROR_NO_LPCM_DATA;
+		return { CELL_MUSIC_DECODE_ERROR_NO_LPCM_DATA, "m_size == 0" };
 	}
 
+	ensure(dec.decoder.m_size >= dec.read_pos);
 	const u64 size_left = dec.decoder.m_size - dec.read_pos;
 
 	if (dec.read_pos == 0)
@@ -229,10 +232,10 @@ error_code cell_music_decode_read(vm::ptr<void> buf, vm::ptr<u32> startTime, u64
 
 	if (size_to_read == 0)
 	{
-		return CELL_MUSIC_DECODE_ERROR_NO_LPCM_DATA; // TODO: speculative
+		return { CELL_MUSIC_DECODE_ERROR_NO_LPCM_DATA, "size_to_read == 0" }; // TODO: speculative
 	}
 
-	std::memcpy(buf.get_ptr(), &dec.decoder.data[dec.read_pos], size_to_read);
+	std::memcpy(buf.get_ptr(), &::at32(dec.decoder.data, dec.read_pos), size_to_read);
 
 	if (size_to_read < reqSize)
 	{
@@ -383,6 +386,12 @@ error_code cellMusicDecodeSetDecodeCommand(s32 command)
 		dec.func(ppu, CELL_MUSIC_DECODE_EVENT_SET_DECODE_COMMAND_RESULT, vm::addr_t(s32{result}), dec.userData);
 		return CELL_OK;
 	});
+
+	//sysutil_register_cb([&dec, command](ppu_thread& ppu) -> s32
+	//{
+	//	dec.func(ppu, CELL_MUSIC_DECODE_EVENT_STATUS_NOTIFICATION, vm::addr_t(command), dec.userData);
+	//	return CELL_OK;
+	//});
 
 	return CELL_OK;
 }

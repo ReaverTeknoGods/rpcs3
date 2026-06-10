@@ -152,13 +152,15 @@ namespace gl
 			dst = data.get();
 			dst->properties_encoding = match_key;
 			m_temporary_surfaces.emplace_back(std::move(data));
+
+			dst->set_name(fmt::format("[Temp View] id=%u, fmt=0x%x", dst->id(), gcm_format));
 		}
 
 		dst->add_ref();
 
 		if (copy)
 		{
-			std::vector<copy_region_descriptor> region =
+			rsx::simple_array<copy_region_descriptor> region =
 			{{
 				.src = src,
 				.xform = rsx::surface_transform::coordinate_transform,
@@ -179,11 +181,15 @@ namespace gl
 			auto components = get_component_mapping(gcm_format, rsx::component_order::default_);
 			dst->set_native_component_layout(components);
 		}
+		else
+		{
+			dst->set_native_component_layout(src->get_native_component_layout());
+		}
 
 		return dst->get_view(remap);
 	}
 
-	void texture_cache::copy_transfer_regions_impl(gl::command_context& cmd, gl::texture* dst_image, const std::vector<copy_region_descriptor>& sources) const
+	void texture_cache::copy_transfer_regions_impl(gl::command_context& cmd, gl::texture* dst_image, const rsx::simple_array<copy_region_descriptor>& sources) const
 	{
 		const auto dst_bpp = dst_image->pitch() / dst_image->width();
 		const auto dst_aspect = dst_image->aspect();

@@ -347,7 +347,7 @@ namespace vk
 		void bind_resources(const vk::command_buffer& cmd) override
 		{
 			set_parameters(cmd);
-			m_program->bind_uniform({ m_data->value, m_data_offset, m_ssbo_length }, 0, 0);
+			m_program->bind_uniform({ *m_data, m_data_offset, m_ssbo_length }, 0, 0);
 		}
 
 		void run(const vk::command_buffer& cmd, const vk::buffer* data, u32 src_offset, u32 src_length, u32 dst_offset)
@@ -403,8 +403,6 @@ namespace vk
 
 		cs_deswizzle_3d()
 		{
-			ensure((sizeof(_BlockType) & 3) == 0); // "Unsupported block type"
-
 			ssbo_count = 2;
 			use_push_constants = true;
 			push_constants_size = 28;
@@ -438,8 +436,10 @@ namespace vk
 				{ "%set", "set = 0" },
 				{ "%push_block", "push_constant" },
 				{ "%ws", std::to_string(optimal_group_size) },
-				{ "%_wordcount", std::to_string(sizeof(_BlockType) / 4) },
-				{ "%f", transform }
+				{ "%_wordcount", std::to_string(std::max<u32>(sizeof(_BlockType) / 4u, 1u)) },
+				{ "%f", transform },
+				{ "%_8bit", sizeof(_BlockType) == 1 ? "1" : "0" },
+				{ "%_16bit", sizeof(_BlockType) == 2 ? "1" : "0" },
 			};
 
 			m_src = fmt::replace_all(m_src, syntax_replace);
@@ -449,8 +449,8 @@ namespace vk
 		{
 			set_parameters(cmd);
 
-			m_program->bind_uniform({ src_buffer->value, in_offset, block_length }, 0, 0);
-			m_program->bind_uniform({ dst_buffer->value, out_offset, block_length }, 0, 1);
+			m_program->bind_uniform({ *src_buffer, in_offset, block_length }, 0, 0);
+			m_program->bind_uniform({ *dst_buffer, out_offset, block_length }, 0, 1);
 		}
 
 		void set_parameters(const vk::command_buffer& cmd)
@@ -475,9 +475,10 @@ namespace vk
 			params.logh = rsx::ceil_log2(height);
 			params.logd = rsx::ceil_log2(depth);
 
-			const u32 num_bytes_per_invocation = (sizeof(_BlockType) * optimal_group_size);
-			const u32 linear_invocations = utils::aligned_div(data_length, num_bytes_per_invocation);
-			compute_task::run(cmd, linear_invocations);
+			const u32 word_count_per_invocation = std::max<u32>(sizeof(_BlockType) / 4u, 1u);
+			const u32 num_bytes_per_invocation = (word_count_per_invocation * 4u * optimal_group_size);
+			const u32 workgroup_invocations = utils::aligned_div(data_length, num_bytes_per_invocation);
+			compute_task::run(cmd, workgroup_invocations);
 		}
 	};
 
@@ -579,8 +580,8 @@ namespace vk
 			set_parameters(cmd);
 
 			const auto op = static_cast<u32>(Op);
-			m_program->bind_uniform({ src_buffer->value, in_offset, in_block_length }, 0u, 0u ^ op);
-			m_program->bind_uniform({ dst_buffer->value, out_offset, out_block_length }, 0u, 1u ^ op);
+			m_program->bind_uniform({ *src_buffer, in_offset, in_block_length }, 0u, 0u ^ op);
+			m_program->bind_uniform({ *dst_buffer, out_offset, out_block_length }, 0u, 1u ^ op);
 		}
 
 		void set_parameters(const vk::command_buffer& cmd)

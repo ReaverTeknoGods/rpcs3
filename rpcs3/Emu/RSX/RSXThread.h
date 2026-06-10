@@ -122,7 +122,7 @@ namespace rsx
 		std::unique_ptr<FIFO::FIFO_control> fifo_ctrl;
 		atomic_t<bool> rsx_thread_running{ false };
 		std::vector<std::pair<u32, u32>> dump_callstack_list() const override;
-		std::string dump_misc() const override;
+		void dump_misc(std::string& ret, std::any& custom_data) const override;
 
 	protected:
 		FIFO::flattening_helper m_flattener;
@@ -215,6 +215,8 @@ namespace rsx
 		atomic_bitmask_t<flip_request> async_flip_requested{};
 		u8 async_flip_buffer{ 0 };
 
+		surface_scaling_config_t resolution_scaling_config{};
+
 		void capture_frame(const std::string& name);
 		const backend_configuration& get_backend_config() const { return backend_config; }
 
@@ -257,6 +259,10 @@ namespace rsx
 		void get_framebuffer_layout(rsx::framebuffer_creation_context context, framebuffer_layout &layout);
 		bool get_scissor(areau& region, bool clip_viewport);
 
+		// Notify framebuffer layout has been committed.
+		// FIXME: This should not be here
+		void on_framebuffer_layout_updated();
+
 		RSXVertexProgram current_vertex_program = {};
 		RSXFragmentProgram current_fragment_program = {};
 
@@ -274,11 +280,13 @@ namespace rsx
 		// Prefetch and analyze the currently active vertex program ucode
 		void prefetch_vertex_program();
 
+		// Update fragment program export configuration. Can invalidate the current program.
+		rsx::flags32_t get_fragment_program_export_config();
+
+		// Gets the current vertex program and associated state. Can invalidate the bound progam.
 		void get_current_vertex_program(const std::array<std::unique_ptr<rsx::sampled_image_descriptor_base>, rsx::limits::vertex_textures_count>& sampler_descriptors);
 
-		/**
-		 * Gets current fragment program and associated fragment state
-		 */
+		// Gets current fragment program and associated fragment state. Can invalidate the bound program.
 		void get_current_fragment_program(const std::array<std::unique_ptr<rsx::sampled_image_descriptor_base>, rsx::limits::fragment_textures_count>& sampler_descriptors);
 
 	public:
@@ -374,8 +382,9 @@ namespace rsx
 		// sync
 		void sync();
 		flags32_t read_barrier(u32 memory_address, u32 memory_range, bool unconditional);
+		virtual void write_barrier(u32 /*memory_address*/, u32 /*memory_range*/) {}
 		virtual void sync_hint(FIFO::interrupt_hint hint, reports::sync_hint_payload_t payload);
-		virtual bool release_GCM_label(u32 /*address*/, u32 /*value*/) { return false; }
+		virtual bool release_GCM_label(u32 /*type*/, u32 /*address*/, u32 /*value*/) { return false; }
 
 	protected:
 

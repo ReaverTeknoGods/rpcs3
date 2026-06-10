@@ -143,7 +143,7 @@ namespace rsx
 		struct deferred_subresource : image_section_attributes_t
 		{
 			image_resource_type external_handle = 0;
-			std::vector<copy_region_descriptor> sections_to_copy;
+			rsx::simple_array<copy_region_descriptor> sections_to_copy;
 			texture_channel_remap_t remap;
 			deferred_request_command op = deferred_request_command::nop;
 			u32 external_ref_addr = 0;
@@ -491,10 +491,10 @@ namespace rsx
 		virtual section_storage_type* create_nul_section(commandbuffer_type&, const address_range32 &rsx_range, const image_section_attributes_t& attrs, const GCM_tile_reference& tile, bool memory_load) = 0;
 		virtual void set_component_order(section_storage_type& section, u32 gcm_format, component_order expected) = 0;
 		virtual void insert_texture_barrier(commandbuffer_type&, image_storage_type* tex, bool strong_ordering = true) = 0;
-		virtual image_view_type generate_cubemap_from_images(commandbuffer_type&, u32 gcm_format, u16 size, const std::vector<copy_region_descriptor>& sources, const texture_channel_remap_t& remap_vector) = 0;
-		virtual image_view_type generate_3d_from_2d_images(commandbuffer_type&, u32 gcm_format, u16 width, u16 height, u16 depth, const std::vector<copy_region_descriptor>& sources, const texture_channel_remap_t& remap_vector) = 0;
-		virtual image_view_type generate_atlas_from_images(commandbuffer_type&, u32 gcm_format, u16 width, u16 height, const std::vector<copy_region_descriptor>& sections_to_copy, const texture_channel_remap_t& remap_vector) = 0;
-		virtual image_view_type generate_2d_mipmaps_from_images(commandbuffer_type&, u32 gcm_format, u16 width, u16 height, const std::vector<copy_region_descriptor>& sections_to_copy, const texture_channel_remap_t& remap_vector) = 0;
+		virtual image_view_type generate_cubemap_from_images(commandbuffer_type&, u32 gcm_format, u16 size, const rsx::simple_array<copy_region_descriptor>& sources, const texture_channel_remap_t& remap_vector) = 0;
+		virtual image_view_type generate_3d_from_2d_images(commandbuffer_type&, u32 gcm_format, u16 width, u16 height, u16 depth, const rsx::simple_array<copy_region_descriptor>& sources, const texture_channel_remap_t& remap_vector) = 0;
+		virtual image_view_type generate_atlas_from_images(commandbuffer_type&, u32 gcm_format, u16 width, u16 height, const rsx::simple_array<copy_region_descriptor>& sections_to_copy, const texture_channel_remap_t& remap_vector) = 0;
+		virtual image_view_type generate_2d_mipmaps_from_images(commandbuffer_type&, u32 gcm_format, u16 width, u16 height, const rsx::simple_array<copy_region_descriptor>& sections_to_copy, const texture_channel_remap_t& remap_vector) = 0;
 		virtual void update_image_contents(commandbuffer_type&, image_view_type dst, image_resource_type src, u16 width, u16 height) = 0;
 		virtual bool render_target_format_is_compatible(image_storage_type* tex, u32 gcm_format) = 0;
 		virtual void prepare_for_dma_transfers(commandbuffer_type&) = 0;
@@ -652,7 +652,7 @@ namespace rsx
 			}
 
 			// Resync any exclusions that do not require flushing
-			std::vector<section_storage_type*> surfaces_to_inherit;
+			rsx::simple_array<section_storage_type*> surfaces_to_inherit;
 			for (auto& surface : data.sections_to_exclude)
 			{
 				if (surface->get_context() != texture_upload_context::framebuffer_storage)
@@ -1187,9 +1187,9 @@ namespace rsx
 		}
 
 		template <bool check_unlocked = false>
-		std::vector<section_storage_type*> find_texture_from_range(const address_range32 &test_range, u32 required_pitch = 0, u32 context_mask = 0xFF)
+		rsx::simple_array<section_storage_type*> find_texture_from_range(const address_range32 &test_range, u32 required_pitch = 0, u32 context_mask = 0xFF)
 		{
-			std::vector<section_storage_type*> results;
+			rsx::simple_array<section_storage_type*> results;
 
 			for (auto It = m_storage.range_begin(test_range, full_range, check_unlocked); It != m_storage.range_end(); It++)
 			{
@@ -1731,24 +1731,34 @@ namespace rsx
 			}
 			case deferred_request_command::cubemap_unwrap:
 			{
-				std::vector<copy_region_descriptor> sections(6);
-				for (u16 n = 0; n < 6; ++n)
+				rsx::simple_array<copy_region_descriptor> sections(6 * desc.mipmaps);
+				for (u16 n = 0, section_id = 0; n < 6; ++n)
 				{
-					sections[n] =
+					u16 mip_w = desc.width, mip_h = desc.height;
+					u16 y_offset = static_cast<u16>(desc.slice_h * n);
+
+					for (u8 mip = 0; mip < desc.mipmaps; ++mip)
 					{
-						.src = desc.external_handle,
-						.xform = surface_transform::coordinate_transform,
-						.level = 0,
-						.src_x = 0,
-						.src_y = static_cast<u16>(desc.slice_h * n),
-						.dst_x = 0,
-						.dst_y = 0,
-						.dst_z = n,
-						.src_w = desc.width,
-						.src_h = desc.height,
-						.dst_w = desc.width,
-						.dst_h = desc.height
-					};
+						sections[section_id++] =
+						{
+							.src = desc.external_handle,
+							.xform = surface_transform::coordinate_transform,
+							.level = mip,
+							.src_x = 0,
+							.src_y = y_offset,
+							.dst_x = 0,
+							.dst_y = 0,
+							.dst_z = n,
+							.src_w = mip_w,
+							.src_h = mip_h,
+							.dst_w = mip_w,
+							.dst_h = mip_h
+						};
+
+						y_offset += mip_h;
+						mip_w = std::max<u16>(mip_w / 2, 1);
+						mip_h = std::max<u16>(mip_h / 2, 1);
+					}
 				}
 
 				result = generate_cubemap_from_images(cmd, desc.gcm_format, desc.width, sections, desc.remap);
@@ -1761,7 +1771,7 @@ namespace rsx
 			}
 			case deferred_request_command::_3d_unwrap:
 			{
-				std::vector<copy_region_descriptor> sections;
+				rsx::simple_array<copy_region_descriptor> sections;
 				sections.resize(desc.depth);
 				for (u16 n = 0; n < desc.depth; ++n)
 				{
@@ -1869,318 +1879,319 @@ namespace rsx
 				{
 					return{ cached_texture->get_view(remap), cached_texture->get_context(), cached_texture->get_format_class(), scale, cached_texture->get_image_type() };
 				}
+
+				return {};
 			}
-			else
+
+			// Fast lookup for cyclic reference
+			if (m_rtts.address_is_bound(attr.address)) [[unlikely]]
 			{
-				// Fast lookup for cyclic reference
-				if (m_rtts.address_is_bound(attr.address)) [[unlikely]]
+				if (auto texptr = m_rtts.get_surface_at(attr.address);
+					helpers::check_framebuffer_resource(texptr, attr, extended_dimension))
 				{
-					if (auto texptr = m_rtts.get_surface_at(attr.address);
-						helpers::check_framebuffer_resource(texptr, attr, extended_dimension))
+					const bool force_convert = !render_target_format_is_compatible(texptr, attr.gcm_format);
+
+					auto result = helpers::process_framebuffer_resource_fast<sampled_image_descriptor>(
+						cmd, texptr, attr, scale, extended_dimension, remap, true, force_convert);
+
+					if (!options.skip_texture_barriers && result.is_cyclic_reference)
 					{
-						const bool force_convert = !render_target_format_is_compatible(texptr, attr.gcm_format);
-
-						auto result = helpers::process_framebuffer_resource_fast<sampled_image_descriptor>(
-							cmd, texptr, attr, scale, extended_dimension, remap, true, force_convert);
-
-						if (!options.skip_texture_barriers && result.is_cyclic_reference)
-						{
-							// A texture barrier is only necessary when the rendertarget is going to be bound as a shader input.
-							// If a temporary copy is to be made, this should not be invoked
-							insert_texture_barrier(cmd, texptr);
-						}
-
-						return result;
+						// A texture barrier is only necessary when the rendertarget is going to be bound as a shader input.
+						// If a temporary copy is to be made, this should not be invoked
+						insert_texture_barrier(cmd, texptr);
 					}
+
+					return result;
+				}
+			}
+
+			rsx::simple_array<typename SurfaceStoreType::surface_overlap_info> overlapping_fbos;
+			rsx::simple_array<section_storage_type*> overlapping_locals;
+
+			auto fast_fbo_check = [&]() -> sampled_image_descriptor
+			{
+				const auto& last = overlapping_fbos.back();
+				if (last.src_area.x == 0 && last.src_area.y == 0 && !last.is_clipped)
+				{
+					const bool force_convert = !render_target_format_is_compatible(last.surface, attr.gcm_format);
+
+					return helpers::process_framebuffer_resource_fast<sampled_image_descriptor>(
+						cmd, last.surface, attr, scale, extended_dimension, remap, false, force_convert);
 				}
 
-				std::vector<typename SurfaceStoreType::surface_overlap_info> overlapping_fbos;
-				std::vector<section_storage_type*> overlapping_locals;
+				return {};
+			};
 
-				auto fast_fbo_check = [&]() -> sampled_image_descriptor
+			// Check surface cache early if the option is enabled
+			if (options.prefer_surface_cache)
+			{
+				const u16 block_h = (attr.depth * attr.slice_h);
+				overlapping_fbos = m_rtts.get_merged_texture_memory_region(cmd, attr.address, attr.width, block_h, attr.pitch, attr.bpp, rsx::surface_access::shader_read);
+
+				if (!overlapping_fbos.empty())
 				{
-					const auto& last = overlapping_fbos.back();
-					if (last.src_area.x == 0 && last.src_area.y == 0 && !last.is_clipped)
+					if (auto result = fast_fbo_check(); result.validate())
 					{
-						const bool force_convert = !render_target_format_is_compatible(last.surface, attr.gcm_format);
-
-						return helpers::process_framebuffer_resource_fast<sampled_image_descriptor>(
-							cmd, last.surface, attr, scale, extended_dimension, remap, false, force_convert);
-					}
-
-					return {};
-				};
-
-				// Check surface cache early if the option is enabled
-				if (options.prefer_surface_cache)
-				{
-					const u16 block_h = (attr.depth * attr.slice_h);
-					overlapping_fbos = m_rtts.get_merged_texture_memory_region(cmd, attr.address, attr.width, block_h, attr.pitch, attr.bpp, rsx::surface_access::shader_read);
-
-					if (!overlapping_fbos.empty())
-					{
-						if (auto result = fast_fbo_check(); result.validate())
-						{
-							return result;
-						}
-
-						if (options.skip_texture_merge)
-						{
-							overlapping_fbos.clear();
-						}
-					}
-				}
-
-				// Check shader_read storage. In a given scene, reads from local memory far outnumber reads from the surface cache
-				const u32 lookup_mask = rsx::texture_upload_context::shader_read | rsx::texture_upload_context::blit_engine_dst | rsx::texture_upload_context::blit_engine_src;
-				overlapping_locals = find_texture_from_range<true>(memory_range, attr.height > 1 ? attr.pitch : 0, lookup_mask & options.lookup_mask);
-
-				// Search for exact match if possible
-				for (auto& cached_texture : overlapping_locals)
-				{
-					if (cached_texture->matches(attr.address, attr.gcm_format, attr.width, attr.height, attr.depth, 0))
-					{
-#ifdef TEXTURE_CACHE_DEBUG
-						if (!memory_range.inside(cached_texture->get_confirmed_range()))
-						{
-							// TODO. This is easily possible for blit_dst textures if the blit is incomplete in Y
-							// The possibility that a texture will be split into parts on the CPU like this is very rare
-							continue;
-						}
-#endif
-						if (attr.swizzled != cached_texture->is_swizzled())
-						{
-							// We can have the correct data in cached_texture but it needs decoding before it can be sampled.
-							// Usually a sign of a game bug where the developer forgot to mark the texture correctly the first time we see it.
-							// TODO: This section should execute under an exclusive lock, but we're not actually modifying any object references, only flags
-							rsx_log.warning("A texture was found in cache for address 0x%x, but swizzle flag does not match", attr.address);
-							cached_texture->unprotect();
-							cached_texture->set_dirty(true);
-							break;
-						}
-
-						return{ cached_texture->get_view(remap), cached_texture->get_context(), cached_texture->get_format_class(), scale, cached_texture->get_image_type() };
-					}
-				}
-
-				if (!overlapping_locals.empty())
-				{
-					// Remove everything that is not a transfer target
-					overlapping_locals.erase
-					(
-						std::remove_if(overlapping_locals.begin(), overlapping_locals.end(), [](const auto& e)
-						{
-							return e->is_dirty() || (e->get_context() != rsx::texture_upload_context::blit_engine_dst);
-						}),
-						overlapping_locals.end()
-					);
-				}
-
-				if (!options.prefer_surface_cache)
-				{
-					// Now check for surface cache hits
-					const u16 block_h = (attr.depth * attr.slice_h);
-					overlapping_fbos = m_rtts.get_merged_texture_memory_region(cmd, attr.address, attr.width, block_h, attr.pitch, attr.bpp, rsx::surface_access::shader_read);
-				}
-
-				if (!overlapping_fbos.empty() || !overlapping_locals.empty())
-				{
-					int _pool = -1;
-					if (overlapping_locals.empty()) [[likely]]
-					{
-						_pool = 0;
-					}
-					else if (overlapping_fbos.empty())
-					{
-						_pool = 1;
-					}
-					else
-					{
-						_pool = (overlapping_locals.back()->last_write_tag < overlapping_fbos.back().surface->last_use_tag) ? 0 : 1;
-					}
-
-					if (_pool == 0)
-					{
-						// Surface cache data is newer, check if this thing fits our search parameters
-						if (!options.prefer_surface_cache)
-						{
-							if (auto result = fast_fbo_check(); result.validate())
-							{
-								return result;
-							}
-						}
-					}
-					else if (extended_dimension <= rsx::texture_dimension_extended::texture_dimension_2d)
-					{
-						const auto last = overlapping_locals.back();
-						const auto normalized_width = u16(last->get_width() * get_format_block_size_in_bytes(last->get_gcm_format())) / attr.bpp;
-
-						if (last->get_section_base() == attr.address &&
-							normalized_width >= attr.width && last->get_height() >= attr.height)
-						{
-							u32  gcm_format = attr.gcm_format;
-							const bool gcm_format_is_depth = helpers::is_gcm_depth_format(attr.gcm_format);
-
-							if (!gcm_format_is_depth && last->is_depth_texture())
-							{
-								// While the copy routines can perform a typeless cast, prefer to not cross the aspect barrier if possible
-								gcm_format = helpers::get_compatible_depth_format(attr.gcm_format);
-							}
-
-							auto new_attr = attr;
-							new_attr.gcm_format = gcm_format;
-
-							if (last->get_gcm_format() == attr.gcm_format && attr.edge_clamped)
-							{
-								// Clipped view
-								auto viewed_image = last->get_raw_texture();
-								sampled_image_descriptor result = { viewed_image->get_view(remap), last->get_context(),
-									viewed_image->format_class(), scale, extended_dimension, false, viewed_image->samples() };
-
-								helpers::calculate_sample_clip_parameters(result, position2i(0, 0), size2i(attr.width, attr.height), size2i(normalized_width, last->get_height()));
-								return result;
-							}
-
-							return { last->get_raw_texture(), deferred_request_command::copy_image_static, new_attr, {},
-									last->get_context(), classify_format(gcm_format), scale, extended_dimension, remap };
-						}
-					}
-
-					auto result = helpers::merge_cache_resources<sampled_image_descriptor>(
-						cmd, overlapping_fbos, overlapping_locals, attr, scale, extended_dimension, remap, _pool);
-
-					const bool is_simple_subresource_copy =
-						(result.external_subresource_desc.op == deferred_request_command::copy_image_static) ||
-						(result.external_subresource_desc.op == deferred_request_command::copy_image_dynamic) ||
-						(result.external_subresource_desc.op == deferred_request_command::blit_image_static);
-
-					if (attr.edge_clamped &&
-						!g_cfg.video.strict_rendering_mode &&
-						is_simple_subresource_copy &&
-						render_target_format_is_compatible(result.external_subresource_desc.src0(), attr.gcm_format))
-					{
-						if (result.external_subresource_desc.op != deferred_request_command::blit_image_static) [[ likely ]]
-						{
-							helpers::convert_image_copy_to_clip_descriptor(
-								result,
-								position2i(result.external_subresource_desc.x, result.external_subresource_desc.y),
-								size2i(result.external_subresource_desc.width, result.external_subresource_desc.height),
-								size2i(result.external_subresource_desc.external_handle->width(), result.external_subresource_desc.external_handle->height()),
-								remap, false);
-						}
-						else
-						{
-							helpers::convert_image_blit_to_clip_descriptor(
-								result,
-								remap,
-								false);
-						}
-
-						if (!!result.ref_address && m_rtts.address_is_bound(result.ref_address))
-						{
-							result.is_cyclic_reference = true;
-
-							auto texptr = ensure(m_rtts.get_surface_at(result.ref_address));
-							insert_texture_barrier(cmd, texptr);
-						}
-
 						return result;
 					}
 
 					if (options.skip_texture_merge)
 					{
-						if (is_simple_subresource_copy)
-						{
-							return result;
-						}
+						overlapping_fbos.clear();
+					}
+				}
+			}
 
-						return {};
+			// Check shader_read storage. In a given scene, reads from local memory far outnumber reads from the surface cache
+			const u32 lookup_mask = rsx::texture_upload_context::shader_read | rsx::texture_upload_context::blit_engine_dst | rsx::texture_upload_context::blit_engine_src;
+			overlapping_locals = find_texture_from_range<true>(memory_range, attr.height > 1 ? attr.pitch : 0, lookup_mask & options.lookup_mask);
+
+			// Search for exact match if possible
+			for (auto& cached_texture : overlapping_locals)
+			{
+				if (cached_texture->matches(attr.address, attr.gcm_format, attr.width, attr.height, attr.depth, 0))
+				{
+#ifdef TEXTURE_CACHE_DEBUG
+					if (!memory_range.inside(cached_texture->get_confirmed_range()))
+					{
+						// TODO. This is easily possible for blit_dst textures if the blit is incomplete in Y
+						// The possibility that a texture will be split into parts on the CPU like this is very rare
+						continue;
+					}
+#endif
+					if (attr.swizzled != cached_texture->is_swizzled())
+					{
+						// We can have the correct data in cached_texture but it needs decoding before it can be sampled.
+						// Usually a sign of a game bug where the developer forgot to mark the texture correctly the first time we see it.
+						// TODO: This section should execute under an exclusive lock, but we're not actually modifying any object references, only flags
+						rsx_log.warning("A texture was found in cache for address 0x%x, but swizzle flag does not match", attr.address);
+						cached_texture->unprotect();
+						cached_texture->set_dirty(true);
+						break;
 					}
 
-					if (const auto section_count = result.external_subresource_desc.sections_to_copy.size();
-						section_count > 0)
+					return{ cached_texture->get_view(remap), cached_texture->get_context(), cached_texture->get_format_class(), scale, cached_texture->get_image_type() };
+				}
+			}
+
+			if (!overlapping_locals.empty())
+			{
+				// Remove everything that is not a transfer target
+				overlapping_locals.erase_if([](const auto& e)
+				{
+					return e->is_dirty() || (e->get_context() != rsx::texture_upload_context::blit_engine_dst);
+				});
+			}
+
+			if (!options.prefer_surface_cache)
+			{
+				// Now check for surface cache hits
+				const u16 block_h = (attr.depth * attr.slice_h);
+				overlapping_fbos = m_rtts.get_merged_texture_memory_region(cmd, attr.address, attr.width, block_h, attr.pitch, attr.bpp, rsx::surface_access::shader_read);
+			}
+
+			if (!overlapping_fbos.empty() || !overlapping_locals.empty())
+			{
+				int _pool = -1;
+				if (overlapping_locals.empty()) [[likely]]
+				{
+					_pool = 0;
+				}
+				else if (overlapping_fbos.empty())
+				{
+					_pool = 1;
+				}
+				else
+				{
+					_pool = (overlapping_locals.back()->last_write_tag < overlapping_fbos.back().surface->last_use_tag) ? 0 : 1;
+				}
+
+				if (_pool == 0)
+				{
+					// Surface cache data is newer, check if this thing fits our search parameters
+					if (!options.prefer_surface_cache)
 					{
-						bool result_is_valid;
-						if (_pool == 0 && !g_cfg.video.write_color_buffers && !g_cfg.video.write_depth_buffer)
+						if (auto result = fast_fbo_check(); result.validate())
 						{
-							// HACK: Avoid WCB requirement for some games with wrongly declared sampler dimensions.
-							// TODO: Some games may render a small region (e.g 1024x256x2) and sample a huge texture (e.g 1024x1024).
-							// Seen in APF2k8 - this causes missing bits to be reuploaded from CPU which can cause WCB requirement.
-							// Properly fix this by introducing partial data upload into the surface cache in such cases and making RCB/RDB
-							// enabled by default. Blit engine already handles this correctly.
-							result_is_valid = true;
-						}
-						else
-						{
-							result_is_valid = result.atlas_covers_target_area(section_count == 1 ? 99 : 90);
-						}
-
-						if (result_is_valid)
-						{
-							// Check for possible duplicates
-							usz max_overdraw_ratio = u32{ umax };
-							usz max_safe_sections = u32{ umax };
-
-							switch (result.external_subresource_desc.op)
-							{
-							case deferred_request_command::atlas_gather:
-								max_overdraw_ratio = 150;
-								max_safe_sections = 8 + 2 * attr.mipmaps;
-								break;
-							case deferred_request_command::cubemap_gather:
-								max_overdraw_ratio = 150;
-								max_safe_sections = 6 * 2 * attr.mipmaps;
-								break;
-							case deferred_request_command::_3d_gather:
-								// 3D gather can have very many input sections, try to keep section count low
-								max_overdraw_ratio = 125;
-								max_safe_sections = (attr.depth * attr.mipmaps * 110) / 100;
-								break;
-							default:
-								break;
-							}
-
-							if (overlapping_fbos.size() > max_safe_sections)
-							{
-								// Are we really over-budget?
-								u32 coverage_size = 0;
-								for (const auto& section : overlapping_fbos)
-								{
-									const auto area = section.surface->get_native_pitch() * section.surface->template get_surface_height<rsx::surface_metrics::bytes>();
-									coverage_size += area;
-								}
-
-								if (const auto coverage_ratio = (coverage_size * 100ull) / memory_range.length();
-									coverage_ratio > max_overdraw_ratio)
-								{
-									rsx_log.warning("[Performance warning] Texture gather routine encountered too many objects! Operation=%d, Mipmaps=%d, Depth=%d, Sections=%zu, Ratio=%llu%",
-										static_cast<int>(result.external_subresource_desc.op), attr.mipmaps, attr.depth, overlapping_fbos.size(), coverage_ratio);
-									m_rtts.check_for_duplicates(overlapping_fbos);
-								}
-							}
-
-							// Optionally disallow caching if resource is being written to as it is being read from
-							for (const auto& section : overlapping_fbos)
-							{
-								if (m_rtts.address_is_bound(section.base_address))
-								{
-									if (result.external_subresource_desc.op == deferred_request_command::copy_image_static)
-									{
-										result.external_subresource_desc.op = deferred_request_command::copy_image_dynamic;
-									}
-									else
-									{
-										result.external_subresource_desc.do_not_cache = true;
-									}
-
-									break;
-								}
-							}
-
 							return result;
 						}
 					}
 				}
+				else if (extended_dimension <= rsx::texture_dimension_extended::texture_dimension_2d)
+				{
+					const auto last = overlapping_locals.back();
+					const auto normalized_width = u16(last->get_width() * get_format_block_size_in_bytes(last->get_gcm_format())) / attr.bpp;
+
+					if (last->get_section_base() == attr.address &&
+						normalized_width >= attr.width && last->get_height() >= attr.height)
+					{
+						u32  gcm_format = attr.gcm_format;
+						const bool gcm_format_is_depth = helpers::is_gcm_depth_format(attr.gcm_format);
+
+						if (!gcm_format_is_depth && last->is_depth_texture())
+						{
+							// While the copy routines can perform a typeless cast, prefer to not cross the aspect barrier if possible
+							gcm_format = helpers::get_compatible_depth_format(attr.gcm_format);
+						}
+
+						auto new_attr = attr;
+						new_attr.gcm_format = gcm_format;
+
+						if (last->get_gcm_format() == attr.gcm_format && attr.edge_clamped)
+						{
+							// Clipped view
+							auto viewed_image = last->get_raw_texture();
+							sampled_image_descriptor result = { viewed_image->get_view(remap), last->get_context(),
+								viewed_image->format_class(), scale, extended_dimension, false, viewed_image->samples() };
+
+							helpers::calculate_sample_clip_parameters(result, position2i(0, 0), size2i(attr.width, attr.height), size2i(normalized_width, last->get_height()));
+							return result;
+						}
+
+						return { last->get_raw_texture(), deferred_request_command::copy_image_static, new_attr, {},
+								last->get_context(), classify_format(gcm_format), scale, extended_dimension, remap };
+					}
+				}
+
+				auto result = helpers::merge_cache_resources<sampled_image_descriptor>(
+					cmd, overlapping_fbos, overlapping_locals, attr, scale, extended_dimension, remap, _pool);
+
+				const bool is_simple_subresource_copy =
+					(result.external_subresource_desc.op == deferred_request_command::copy_image_static) ||
+					(result.external_subresource_desc.op == deferred_request_command::copy_image_dynamic) ||
+					(result.external_subresource_desc.op == deferred_request_command::blit_image_static);
+
+				if (attr.edge_clamped &&
+					!g_cfg.video.strict_rendering_mode &&
+					is_simple_subresource_copy &&
+					render_target_format_is_compatible(result.external_subresource_desc.src0(), attr.gcm_format))
+				{
+					if (result.external_subresource_desc.op != deferred_request_command::blit_image_static) [[ likely ]]
+					{
+						helpers::convert_image_copy_to_clip_descriptor(
+							result,
+							position2i(result.external_subresource_desc.x, result.external_subresource_desc.y),
+							size2i(result.external_subresource_desc.width, result.external_subresource_desc.height),
+							size2i(result.external_subresource_desc.external_handle->width(), result.external_subresource_desc.external_handle->height()),
+							remap, false);
+					}
+					else
+					{
+						helpers::convert_image_blit_to_clip_descriptor(
+							result,
+							remap,
+							false);
+					}
+
+					if (!!result.ref_address && m_rtts.address_is_bound(result.ref_address))
+					{
+						result.is_cyclic_reference = true;
+
+						auto texptr = ensure(m_rtts.get_surface_at(result.ref_address));
+						insert_texture_barrier(cmd, texptr);
+					}
+
+					return result;
+				}
+
+				if (options.skip_texture_merge)
+				{
+					if (is_simple_subresource_copy)
+					{
+						return result;
+					}
+
+					return {};
+				}
+
+				const auto section_count = result.external_subresource_desc.sections_to_copy.size();
+				if (section_count == 0)
+				{
+					// Fail
+					return {};
+				}
+
+				bool result_is_valid;
+				if (_pool == 0 && !g_cfg.video.write_color_buffers && !g_cfg.video.write_depth_buffer)
+				{
+					// HACK: Avoid WCB requirement for some games with wrongly declared sampler dimensions.
+					// TODO: Some games may render a small region (e.g 1024x256x2) and sample a huge texture (e.g 1024x1024).
+					// Seen in APF2k8 - this causes missing bits to be reuploaded from CPU which can cause WCB requirement.
+					// Properly fix this by introducing partial data upload into the surface cache in such cases and making RCB/RDB
+					// enabled by default. Blit engine already handles this correctly.
+					result_is_valid = true;
+				}
+				else
+				{
+					result_is_valid = result.atlas_covers_target_area(section_count == 1 ? 99 : 90);
+				}
+
+				if (!result_is_valid)
+				{
+					return {};
+				}
+
+				// Check for possible duplicates
+				usz max_overdraw_ratio = u32{ umax };
+				usz max_safe_sections = u32{ umax };
+
+				switch (result.external_subresource_desc.op)
+				{
+				case deferred_request_command::atlas_gather:
+					max_overdraw_ratio = 150;
+					max_safe_sections = 8 + 2 * attr.mipmaps;
+					break;
+				case deferred_request_command::cubemap_gather:
+					max_overdraw_ratio = 150;
+					max_safe_sections = 6 * 2 * attr.mipmaps;
+					break;
+				case deferred_request_command::_3d_gather:
+					// 3D gather can have very many input sections, try to keep section count low
+					max_overdraw_ratio = 125;
+					max_safe_sections = (attr.depth * attr.mipmaps * 110) / 100;
+					break;
+				default:
+					break;
+				}
+
+				if (overlapping_fbos.size() > max_safe_sections)
+				{
+					// Are we really over-budget?
+					u32 coverage_size = 0;
+					for (const auto& section : overlapping_fbos)
+					{
+						const auto area = section.surface->get_native_pitch() * section.surface->template get_surface_height<rsx::surface_metrics::bytes>();
+						coverage_size += area;
+					}
+
+					if (const auto coverage_ratio = (coverage_size * 100ull) / memory_range.length();
+						coverage_ratio > max_overdraw_ratio)
+					{
+						rsx_log.warning("[Performance warning] Texture gather routine encountered too many objects! Operation=%d, Mipmaps=%d, Depth=%d, Sections=%zu, Ratio=%llu%",
+							static_cast<int>(result.external_subresource_desc.op), attr.mipmaps, attr.depth, overlapping_fbos.size(), coverage_ratio);
+						m_rtts.check_for_duplicates(overlapping_fbos);
+					}
+				}
+
+				// Optionally disallow caching if resource is being written to as it is being read from
+				for (const auto& section : overlapping_fbos)
+				{
+					if (m_rtts.address_is_bound(section.base_address))
+					{
+						if (result.external_subresource_desc.op == deferred_request_command::copy_image_static)
+						{
+							result.external_subresource_desc.op = deferred_request_command::copy_image_dynamic;
+						}
+						else
+						{
+							result.external_subresource_desc.do_not_cache = true;
+						}
+
+						break;
+					}
+				}
+
+				return result;
 			}
 
 			return {};
@@ -2411,10 +2422,14 @@ namespace rsx
 				// 1. Only 2D images will invoke this routine
 				// 2. The image has to have been generated on the GPU (fbo or blit target only)
 
-				std::vector<copy_region_descriptor> sections;
-				const bool use_upscaling = (result.upload_context == rsx::texture_upload_context::framebuffer_storage && g_cfg.video.resolution_scale_percent != 100);
+				rsx::simple_array<copy_region_descriptor> sections;
+				const bool use_upscaling = (result.upload_context == rsx::texture_upload_context::framebuffer_storage);
+				auto to_surface_type = [](const copy_region_descriptor& rgn) -> typename surface_store_type::surface_type
+				{
+					return static_cast<typename surface_store_type::surface_type>(rgn.src);
+				};
 
-				if (!helpers::append_mipmap_level(sections, result, attributes, 0, use_upscaling, attributes)) [[unlikely]]
+				if (!helpers::append_mipmap_level(to_surface_type, sections, result, attributes, 0, use_upscaling, attributes)) [[unlikely]]
 				{
 					// Abort if mip0 is not compatible
 					return result;
@@ -2444,7 +2459,7 @@ namespace rsx
 						options, range, extended_dimension, m_rtts, std::forward<Args>(extras)...);
 
 					if (!ret.validate() ||
-						!helpers::append_mipmap_level(sections, ret, attr2, subsurface, use_upscaling, attributes))
+						!helpers::append_mipmap_level(to_surface_type, sections, ret, attr2, subsurface, use_upscaling, attributes))
 					{
 						// Abort
 						break;
@@ -2777,7 +2792,7 @@ namespace rsx
 					surf->template get_surface_height<rsx::surface_metrics::pixels>() != surf->height())
 				{
 					// Must go through a scaling operation due to resolution scaling being present
-					ensure(g_cfg.video.resolution_scale_percent != 100);
+					ensure(src_subres.surface->resolution_scaling_config.scale_percent != 100);
 					use_null_region = false;
 				}
 			}
@@ -3388,8 +3403,8 @@ namespace rsx
 			{
 				const auto surface_width = src_subres.surface->template get_surface_width<rsx::surface_metrics::pixels>();
 				const auto surface_height = src_subres.surface->template get_surface_height<rsx::surface_metrics::pixels>();
-				std::tie(src_area.x1, src_area.y1) = rsx::apply_resolution_scale<false>(src_area.x1, src_area.y1, surface_width, surface_height);
-				std::tie(src_area.x2, src_area.y2) = rsx::apply_resolution_scale<true>(src_area.x2, src_area.y2, surface_width, surface_height);
+				std::tie(src_area.x1, src_area.y1) = rsx::apply_resolution_scale<false>(src_subres.surface->resolution_scaling_config, src_area.x1, src_area.y1, surface_width, surface_height);
+				std::tie(src_area.x2, src_area.y2) = rsx::apply_resolution_scale<true>(src_subres.surface->resolution_scaling_config, src_area.x2, src_area.y2, surface_width, surface_height);
 
 				// The resource is of surface type; possibly disabled AA emulation
 				src_subres.surface->transform_blit_coordinates(rsx::surface_access::transfer_read, src_area);
@@ -3399,8 +3414,8 @@ namespace rsx
 			{
 				const auto surface_width = dst_subres.surface->template get_surface_width<rsx::surface_metrics::pixels>();
 				const auto surface_height = dst_subres.surface->template get_surface_height<rsx::surface_metrics::pixels>();
-				std::tie(dst_area.x1, dst_area.y1) = rsx::apply_resolution_scale<false>(dst_area.x1, dst_area.y1, surface_width, surface_height);
-				std::tie(dst_area.x2, dst_area.y2) = rsx::apply_resolution_scale<true>(dst_area.x2, dst_area.y2, surface_width, surface_height);
+				std::tie(dst_area.x1, dst_area.y1) = rsx::apply_resolution_scale<false>(dst_subres.surface->resolution_scaling_config, dst_area.x1, dst_area.y1, surface_width, surface_height);
+				std::tie(dst_area.x2, dst_area.y2) = rsx::apply_resolution_scale<true>(dst_subres.surface->resolution_scaling_config, dst_area.x2, dst_area.y2, surface_width, surface_height);
 
 				// The resource is of surface type; possibly disabled AA emulation
 				dst_subres.surface->transform_blit_coordinates(rsx::surface_access::transfer_write, dst_area);

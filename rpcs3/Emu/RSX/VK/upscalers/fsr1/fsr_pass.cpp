@@ -108,8 +108,8 @@ namespace vk
 					VK_FALSE, 0.f, 1.f, 0.f, 0.f, VK_FILTER_LINEAR, VK_FILTER_LINEAR, VK_SAMPLER_MIPMAP_MODE_NEAREST, VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK);
 			}
 
-			m_program->bind_uniform({ m_sampler->value, m_input_image->value, m_input_image->image()->current_layout }, 0, 0);
-			m_program->bind_uniform({ VK_NULL_HANDLE, m_output_image->value, m_output_image->image()->current_layout }, 0, 1);
+			m_program->bind_uniform({ *m_input_image, *m_sampler }, 0, 0);
+			m_program->bind_uniform({ *m_output_image }, 0, 1);
 		}
 
 		void fsr_pass::run(const vk::command_buffer& cmd, vk::viewable_image* src, vk::viewable_image* dst, const size2u& input_size, const size2u& output_size)
@@ -176,7 +176,7 @@ namespace vk
 		void rcas_pass::configure(const vk::command_buffer& cmd)
 		{
 			// 0 is actually the sharpest with 2 being the chosen limit. Each progressive unit 'halves' the sharpening intensity.
-			auto cas_attenuation = 2.f - (g_cfg.video.vk.rcas_sharpening_intensity / 50.f);
+			auto cas_attenuation = 2.f - (g_cfg.video.rcas_sharpening_intensity / 50.f);
 			FsrRcasCon(&m_constants_buf[0], cas_attenuation);
 
 			vkCmdPushConstants(cmd, m_program->layout(), VK_SHADER_STAGE_COMPUTE_BIT, 0, push_constants_size, m_constants_buf);

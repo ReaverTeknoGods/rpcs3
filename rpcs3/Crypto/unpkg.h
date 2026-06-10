@@ -126,7 +126,7 @@ struct PKGEntry
 struct PKGMetaData
 {
 private:
-	static std::string to_hex_string(u8 buf[], usz size)
+	static std::string to_hex_string(const u8* buf, usz size)
 	{
 		std::stringstream sstream;
 		for (usz i = 0; i < size; i++)
@@ -135,7 +135,7 @@ private:
 		}
 		return sstream.str();
 	}
-	static std::string to_hex_string(u8 buf[], usz size, usz dotpos)
+	static std::string to_hex_string(const u8* buf, usz size, usz dotpos)
 	{
 		std::string result = to_hex_string(buf, size);
 		if (result.size() > dotpos)
@@ -347,6 +347,7 @@ public:
 	};
 
 	bool is_valid() const { return m_is_valid; }
+	const PKGHeader& get_header() const { return m_header; }
 	package_install_result check_target_app_version() const;
 	static package_install_result extract_data(std::deque<package_reader>& readers, std::deque<std::string>& bootable_paths);
 	const psf::registry& get_psf() const { return m_psf; }

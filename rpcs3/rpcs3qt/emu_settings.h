@@ -35,9 +35,7 @@ public:
 	/** Creates a settings object which reads in the config.yml file at rpcs3/bin/%path%/config.yml
 	* Settings are only written when SaveSettings is called.
 	*/
-	emu_settings();
-
-	bool Init();
+	emu_settings(std::shared_ptr<render_creator> r_creator);
 
 	/** Connects a combo box with the target settings type*/
 	void EnhanceComboBox(QComboBox* combobox, emu_settings_type type, bool is_ranged = false, bool use_max = false, int max = 0, bool sorted = false, bool strict = true);
@@ -78,14 +76,23 @@ public:
 	/** Returns the value of the setting type.*/
 	std::string GetSetting(emu_settings_type type) const;
 
+	/** Returns the default map value of the setting type.*/
+	std::map<std::string, std::string> GetMapSettingDefault(emu_settings_type type) const;
+
+	/** Returns the value of the setting type as map.*/
+	std::map<std::string, std::string> GetMapSetting(emu_settings_type type) const;
+
 	/** Sets the setting type to a given value.*/
 	void SetSetting(emu_settings_type type, const std::string& val) const;
+
+	/** Sets the setting type to a given map value.*/
+	void SetMapSetting(emu_settings_type type, const std::map<std::string, std::string>& val) const;
 
 	/** Try to find the settings type for a given string.*/
 	emu_settings_type FindSettingsType(const cfg::_base* node) const;
 
 	/** Gets all the renderer info for gpu settings.*/
-	render_creator* m_render_creator = nullptr;
+	std::shared_ptr<render_creator> m_render_creator;
 
 	/** Gets a list of all the microphones available.*/
 	microphone_creator m_microphone_creator;
@@ -94,7 +101,7 @@ public:
 	midi_creator m_midi_creator;
 
 	/** Loads the settings from path.*/
-	void LoadSettings(const std::string& title_id = "", bool create_config_from_global = true);
+	void LoadSettings(const std::string& title_id = "", bool create_config_from_global = true, const std::string& db_config = "");
 
 	/** Fixes all registered invalid settings after asking the user for permission.*/
 	void OpenCorrectionDialog(QWidget* parent = Q_NULLPTR);

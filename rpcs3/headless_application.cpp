@@ -24,7 +24,7 @@ headless_application::headless_application(int& argc, char** argv) : QCoreApplic
 bool headless_application::Init()
 {
 	// Force init the emulator
-	InitializeEmulator(m_active_user.empty() ? "00000001" : m_active_user, false);
+	InitializeEmulator(m_active_user.empty() ? "00000001" : m_active_user, false, true);
 
 	// Create callbacks from the emulator, which reference the handlers.
 	InitializeCallbacks();
@@ -49,7 +49,7 @@ void headless_application::InitializeCallbacks()
 {
 	EmuCallbacks callbacks = CreateCallbacks();
 
-	callbacks.try_to_quit = [this](bool force_quit, std::function<void()> on_exit) -> bool
+	callbacks.try_to_quit = [](bool force_quit, std::function<void()> on_exit) -> bool
 	{
 		if (force_quit)
 		{
@@ -58,7 +58,7 @@ void headless_application::InitializeCallbacks()
 				on_exit();
 			}
 
-			sys_log.notice("Quitting headless application");
+			sys_log.notice("Quitting headless application (force_quit=%d)", force_quit);
 			quit();
 			return true;
 		}
@@ -102,6 +102,9 @@ void headless_application::InitializeCallbacks()
 			return std::make_shared<null_camera_handler>();
 		}
 		case camera_handler::qt:
+#ifdef HAVE_SDL3
+		case camera_handler::sdl:
+#endif
 		{
 			fmt::throw_exception("Headless mode can not be used with this camera handler. Current handler: %s", g_cfg.io.camera.get());
 		}
@@ -169,7 +172,7 @@ void headless_application::InitializeCallbacks()
 	callbacks.get_localized_u32string = [](localized_string_id, const char*) -> std::u32string { return {}; };
 	callbacks.get_localized_setting   = [](const cfg::_base*, u32) -> std::string { return {}; };
 
-	callbacks.play_sound = [](const std::string&){};
+	callbacks.play_sound = [](const std::string&, std::optional<f32>){};
 	callbacks.add_breakpoint = [](u32 /*addr*/){};
 
 	callbacks.display_sleep_control_supported = [](){ return false; };

@@ -7,9 +7,12 @@
 #include "sha1.h"
 #include "sha256.h"
 #include "key_vault.h"
+#include <charconv>
+#include <cstdlib>
 #include <cstring>
-#include <stdio.h>
-#include <time.h>
+#include <cstdio>
+#include <ctime>
+#include "Utilities/StrFmt.h"
 #include "Utilities/StrUtil.h"
 #include "Utilities/File.h"
 
@@ -20,50 +23,49 @@
 
 // Auxiliary functions (endian swap, xor).
 
-// Hex string conversion auxiliary functions.
-u64 hex_to_u64(const char* hex_str)
+// Bytes conversion auxiliary function.
+void bytes_to_hex(std::string& hex_str, const unsigned char* data, unsigned int data_length)
 {
-	auto length = std::strlen(hex_str);
-	u64 tmp = 0;
-	u64 result = 0;
-	char c;
+	size_t str_length = data_length * 2;
 
-	while (length--)
+	hex_str.resize(str_length);
+
+	for (size_t i = 0; i < str_length; i += 2)
 	{
-		c = *hex_str++;
-		if((c >= '0') && (c <= '9'))
-			tmp = c - '0';
-		else if((c >= 'a') && (c <= 'f'))
-			tmp = c - 'a' + 10;
-		else if((c >= 'A') && (c <= 'F'))
-			tmp = c - 'A' + 10;
-		else
-			tmp = 0;
-		result |= (tmp << (length * 4));
-	}
-
-	return result;
-}
-
-void hex_to_bytes(unsigned char* data, const char* hex_str, unsigned int str_length)
-{
-	const auto strn_length = (str_length > 0) ? str_length : std::strlen(hex_str);
-	auto data_length = strn_length / 2;
-	char tmp_buf[3] = {0, 0, 0};
-
-	// Don't convert if the string length is odd.
-	if ((strn_length % 2) == 0)
-	{
-		while (data_length--)
+		const auto [ptr, err] = std::to_chars(hex_str.data() + i, hex_str.data() + i + 2, *data++, 16);
+		if (err != std::errc())
 		{
-			tmp_buf[0] = *hex_str++;
-			tmp_buf[1] = *hex_str++;
+			fmt::throw_exception("Failed to read bytes: %s", std::make_error_code(err).message());
+		}
 
-			*data++ = static_cast<u8>(hex_to_u64(tmp_buf) & 0xFF);
+		// Padding handling for values ​​< 0x10 (e.g. 0x05 becomes "5" instead of "05")
+		// If to_chars only writes 1 character, we move to the right and put '0'
+		if (ptr == &hex_str[i] + 1)
+		{
+			hex_str[i + 1] = hex_str[i];
+			hex_str[i] = '0';
 		}
 	}
 }
 
+// Hex string conversion auxiliary function.
+void hex_to_bytes(unsigned char* data, std::string_view hex_str, unsigned int str_length)
+{
+	const auto strn_length = (str_length > 0) ? str_length : hex_str.size();
+
+	// Don't convert if the string length is odd.
+	if ((strn_length % 2) == 0)
+	{
+		for (size_t i = 0; i < strn_length; i += 2)
+		{
+			const auto [ptr, err] = std::from_chars(hex_str.data() + i, hex_str.data() + i + 2, *data++, 16);
+			if (err != std::errc())
+			{
+				fmt::throw_exception("Failed to read hex string: %s", std::make_error_code(err).message());
+			}
+		}
+	}
+}
 
 // Crypto functions (AES128-CBC, AES128-ECB, SHA1-HMAC and AES-CMAC).
 void aescbc128_decrypt(unsigned char *key, unsigned char *iv, unsigned char *in, unsigned char *out, usz len)
@@ -181,7 +183,7 @@ std::array<u8, PASSPHRASE_KEY_LEN> sc_combine_laid_paid(s64 laid, s64 paid)
 {
 	const std::string paid_laid = fmt::format("%016llx%016llx", laid, paid);
 	std::array<u8, PASSPHRASE_KEY_LEN> out{};
-	hex_to_bytes(out.data(), paid_laid.c_str(), PASSPHRASE_KEY_LEN * 2);
+	hex_to_bytes(out.data(), paid_laid, PASSPHRASE_KEY_LEN * 2);
 	return out;
 }
 

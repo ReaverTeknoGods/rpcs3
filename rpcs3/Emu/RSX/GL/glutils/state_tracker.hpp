@@ -17,6 +17,7 @@ namespace gl
 		const u32 STENCIL_FRONT_OP   = 0xFFFF0007;
 		const u32 STENCIL_BACK_OP    = 0xFFFF0008;
 		const u32 STENCIL_BACK_MASK  = 0xFFFF0009;
+		const u32 POLYGON_MODE       = 0xFFFF000A;
 
 		std::unordered_map<GLenum, u64> properties = {};
 		std::unordered_map<GLenum, std::array<u64, 4>> indexed_properties = {};
@@ -353,6 +354,15 @@ namespace gl
 			}
 		}
 
+		void polygon_mode(GLenum mode)
+		{
+			if (!test_and_set_property(POLYGON_MODE, mode))
+			{
+				// Note: GL4+ does not support separate polygon mode per-face-type
+				glPolygonMode(GL_FRONT_AND_BACK, mode);
+			}
+		}
+
 		void use_program(GLuint program)
 		{
 			if (current_program == program)
@@ -366,15 +376,12 @@ namespace gl
 
 		GLuint get_bound_texture(GLuint layer, GLenum target)
 		{
-			ensure(layer < 48);
-			return bound_textures[layer][target];
+			return ::at32(bound_textures, layer)[target];
 		}
 
 		void bind_texture(GLuint layer, GLenum target, GLuint name, GLboolean force = GL_FALSE)
 		{
-			ensure(layer < 48);
-
-			auto& bound = bound_textures[layer][target];
+			auto& bound = ::at32(bound_textures, layer)[target];
 			if (bound != name || force)
 			{
 				glActiveTexture(GL_TEXTURE0 + layer);

@@ -316,7 +316,7 @@ void kernel_explorer::update()
 
 	add_solid_node(find_node(root, additional_nodes::process_info), QString::fromStdString(fmt::format("Process Info, Sdk Version: 0x%08x, PPC SEG: %#x, SFO Category: %s (Fake: %s)", g_ps3_process_info.sdk_ver, g_ps3_process_info.ppc_seg, Emu.GetCat(), Emu.GetFakeCat())));
 
-	auto display_program_segments = [this](QTreeWidgetItem* tree, const ppu_module<lv2_obj>& m)
+	auto display_program_segments = [](QTreeWidgetItem* tree, const ppu_module<lv2_obj>& m)
 	{
 		for (usz i = 0; i < m.segs.size(); i++)
 		{
@@ -651,14 +651,28 @@ void kernel_explorer::update()
 		return fmt::format(" (%.1fs)", wait_time);
 	};
 
+	std::vector<std::pair<s32, std::string>> ppu_threads;
+
 	idm::select<named_thread<ppu_thread>>([&](u32 id, ppu_thread& ppu)
 	{
 		const auto func = ppu.last_function;
 		const ppu_thread_status status = lv2_obj::ppu_state(&ppu, false, false).first;
 
-		add_leaf(find_node(root, additional_nodes::ppu_threads), QString::fromStdString(fmt::format(u8"PPU 0x%07x: “%s”, PRIO: %d, Joiner: %s, Status: %s, State: %s, %s func: “%s”%s", id, *ppu.ppu_tname.load(), ppu.prio.load().prio, ppu.joiner.load(), status, ppu.state.load()
-			, ppu.ack_suspend ? "After" : (ppu.current_function ? "In" : "Last"), func ? func : "", get_wait_time_str(ppu.start_time))));
+		const s32 prio = ppu.prio.load().prio;
+		std::string prio_text = fmt::format("%4d", prio);
+		prio_text = fmt::replace_all(prio_text, " ", " ");
+
+		ppu_threads.emplace_back(prio, fmt::format(u8"PPU 0x%07x: PRIO: %s, “%s”Joiner: %s, Status: %s, State: %s, %s func: “%s”%s", id, prio_text, *ppu.ppu_tname.load(), ppu.joiner.load(), status, ppu.state.load()
+			, ppu.ack_suspend ? "After" : (ppu.current_function ? "In" : "Last"), func ? func : "", get_wait_time_str(ppu.start_time)));
 	}, idm::unlocked);
+
+	// Sort by priority
+	std::stable_sort(ppu_threads.begin(), ppu_threads.end(), FN(x.first < y.first));
+
+	for (const auto& [prio, text] : ppu_threads)
+	{
+		add_leaf(find_node(root, additional_nodes::ppu_threads), QString::fromStdString(text));
+	}
 
 	lock_idm_lv2.reset();
 

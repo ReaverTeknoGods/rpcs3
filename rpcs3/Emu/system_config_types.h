@@ -116,7 +116,10 @@ enum class camera_handler
 {
 	null,
 	fake,
-	qt
+	qt,
+#ifdef HAVE_SDL3
+	sdl,
+#endif
 };
 
 enum class camera_flip
@@ -223,6 +226,13 @@ enum class msaa_level
 	_auto
 };
 
+enum class framebuffer_aliasing_bias
+{
+	_auto,
+	prefer_color,
+	prefer_depth,
+};
+
 enum class detail_level
 {
 	none,
@@ -246,13 +256,6 @@ enum class rsx_fifo_mode : unsigned
 	atomic,
 	atomic_ordered,
 	as_ps3,
-};
-
-enum class tsx_usage
-{
-	disabled,
-	enabled,
-	forced,
 };
 
 enum class enter_button_assign
@@ -358,6 +361,7 @@ enum class stereo_render_mode_options
 	anaglyph_magenta_cyan,
 	anaglyph_trioscopic,
 	anaglyph_amber_blue,
+	anaglyph_custom,
 };
 
 enum class xfloat_accuracy
@@ -366,4 +370,11 @@ enum class xfloat_accuracy
 	approximate,
 	relaxed, // Approximate accuracy for only the "FCGT", "FNMS", "FREST" AND "FRSQEST" instructions
 	inaccurate
+};
+
+enum class vsync_mode
+{
+	off,
+	adaptive,
+	full,
 };

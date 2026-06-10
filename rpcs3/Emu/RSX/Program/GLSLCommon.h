@@ -4,47 +4,12 @@
 
 #include "GLSLTypes.h"
 #include "ShaderParam.h"
+#include "../color_utils.h"
 
 struct RSXFragmentProgram;
 
 namespace rsx
 {
-	// TODO: Move this somewhere else once more compilers are supported other than glsl
-	enum texture_control_bits
-	{
-		GAMMA_A = 0,
-		GAMMA_R,
-		GAMMA_G,
-		GAMMA_B,
-		ALPHAKILL,
-		RENORMALIZE,
-		EXPAND_A,
-		EXPAND_R,
-		EXPAND_G,
-		EXPAND_B,
-		SEXT_A,
-		SEXT_R,
-		SEXT_G,
-		SEXT_B,
-		DEPTH_FLOAT,
-		DEPTH_COMPARE_OP,
-		DEPTH_COMPARE_1,
-		DEPTH_COMPARE_2,
-		FILTERED_MAG,
-		FILTERED_MIN,
-		UNNORMALIZED_COORDS,
-		CLAMP_TEXCOORDS_BIT,
-		WRAP_S,
-		WRAP_T,
-		WRAP_R,
-
-		GAMMA_CTRL_MASK = (1 << GAMMA_R) | (1 << GAMMA_G) | (1 << GAMMA_B) | (1 << GAMMA_A),
-		EXPAND_MASK = (1 << EXPAND_R) | (1 << EXPAND_G) | (1 << EXPAND_B) | (1 << EXPAND_A),
-		EXPAND_OFFSET = EXPAND_A,
-		SEXT_MASK = (1 << SEXT_R) | (1 << SEXT_G) | (1 << SEXT_B) | (1 << SEXT_A),
-		SEXT_OFFSET = SEXT_A
-	};
-
 	enum ROP_control_bits : u32
 	{
 		// Commands. These trigger explicit action.
@@ -56,10 +21,12 @@ namespace rsx
 		// Auxilliary config
 		INT_FRAMEBUFFER_BIT          = 16,
 		MSAA_WRITE_ENABLE_BIT        = 17,
+		FRAG_DEPTH_24_BIT            = 18,
+		FRAG_DEPTH_FLOAT_BIT         = 19,
 
 		// Data
-		ALPHA_FUNC_OFFSET            = 18,
-		MSAA_SAMPLE_CTRL_OFFSET      = 21,
+		ALPHA_FUNC_OFFSET            = 20,
+		MSAA_SAMPLE_CTRL_OFFSET      = 23,
 
 		// Data lengths
 		ALPHA_FUNC_NUM_BITS          = 3,
