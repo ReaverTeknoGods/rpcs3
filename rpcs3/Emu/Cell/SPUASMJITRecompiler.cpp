@@ -3343,23 +3343,31 @@ void spu_recompiler::HGT(spu_opcode_t op)
 
 void spu_recompiler::CLZ(spu_opcode_t op)
 {
+	const XmmLink& va = XmmGet(op.ra, XmmType::Int);
+
 	if (utils::has_avx512())
 	{
-		const XmmLink& va = XmmGet(op.ra, XmmType::Int);
 		const XmmLink& vt = XmmAlloc();
 		c->vplzcntd(vt, va);
 		c->movdqa(SPU_OFF_128(gpr, op.rt), vt);
 		return;
 	}
 
-	c->mov(qw0->r32(), 32 + 31);
-	for (u32 i = 0; i < 4; i++) // unrolled loop
-	{
-		c->bsr(*addr, SPU_OFF_32(gpr, op.ra, &v128::_u32, i));
-		c->cmovz(*addr, qw0->r32());
-		c->xor_(*addr, 31);
-		c->mov(SPU_OFF_32(gpr, op.rt, &v128::_u32, i), *addr);
-	}
+	// Use signed conversion to float, as exponent is ilog2
+	// "Negative" values are zeroed due to saturation subtract
+	constexpr u32 exp_bias = 127;
+
+	const XmmLink& vf = XmmAlloc();
+	const XmmLink& v1 = XmmAlloc();
+	c->cvtdq2ps(vf, va); // only correct with round-towards-zero
+	c->psrld(vf, 23);
+	c->pxor(v1, v1);
+	c->pcmpeqd(v1, va);
+	c->pand(v1, XmmConst(v128::from32p(32 ^ (31 + exp_bias))));
+	c->pxor(v1, XmmConst(v128::from32p(31 + exp_bias)));
+	c->psubusw(v1, vf);	// (x==0)? 32 : 31 - (exponent - exp_bias)
+	c->movdqa(SPU_OFF_128(gpr, op.rt), v1);
+	return;
 }
 
 void spu_recompiler::XSWD(spu_opcode_t op)
