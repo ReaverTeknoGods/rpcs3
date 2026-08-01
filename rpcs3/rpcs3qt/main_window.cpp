@@ -48,6 +48,7 @@
 #include "sound_effect_manager_dialog.h"
 #include "recording_settings_dialog.h"
 #include "config_database.h"
+#include "guest_memory_dumper.h"
 
 #include <thread>
 #include <unordered_set>
@@ -1246,13 +1247,13 @@ bool main_window::HandlePackageInstallation(main_window* mw, QStringList file_pa
 				{
 					std::string resolved_path = Emu.GetCallbacks().resolve_path(it->first);
 
-					if (resolved_path.empty() || claimed_paths.count(resolved_path))
+					if (resolved_path.empty() || claimed_paths.contains(resolved_path))
 					{
 						it = paths.erase(it);
 					}
 					else
 					{
-						claimed_paths.emplace(std::move(resolved_path));
+						claimed_paths.insert(std::move(resolved_path));
 						it++;
 					}
 				}
@@ -1325,23 +1326,27 @@ bool main_window::HandlePackageInstallation(main_window* mw, QStringList file_pa
 				}
 
 				const bool has_expected = !result.version.expected.empty();
-				const bool has_found = !result.version.found.empty();
-				if (has_expected && has_found)
+				const bool has_installed = !result.version.installed.empty();
+
+				if (has_expected && has_installed)
 				{
-					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nUpdate is for version %1, but you have version %2.\n\nTried to install: %3")
-							.arg(QString::fromStdString(result.version.expected)).arg(QString::fromStdString(result.version.found)).arg(package->path));
+					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nUpdate with version %0 is for version %1, but you have version %2.\n\nTried to install: %3")
+							.arg(QString::fromStdString(result.version.app_ver)).arg(QString::fromStdString(result.version.expected)).arg(QString::fromStdString(result.version.installed)).arg(package->path));
 				}
 				else if (has_expected)
 				{
-					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nUpdate is for version %1, but you don't have any data installed.\n\nTried to install: %2")
-							.arg(QString::fromStdString(result.version.expected)).arg(package->path));
+					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nUpdate with version %0 is for version %1, but you don't have any data installed.\n\nTried to install: %2")
+							.arg(QString::fromStdString(result.version.app_ver)).arg(QString::fromStdString(result.version.expected)).arg(package->path));
+				}
+				else if (has_installed)
+				{
+					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nUpdate has version %0, but you already have version %1.\n\nTried to install: %2")
+							.arg(QString::fromStdString(result.version.app_ver)).arg(QString::fromStdString(result.version.installed)).arg(package->path));
 				}
 				else
 				{
 					// probably unreachable
-					const QString found = has_found ? tr("version %1").arg(QString::fromStdString(result.version.found)) : tr("no data installed");
-					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nUpdate is for unknown version, but you have version %1.\n\nTried to install: %2")
-							.arg(QString::fromStdString(result.version.expected)).arg(found).arg(package->path));
+					QMessageBox::warning(mw, tr("Warning!"), tr("Package cannot be installed on top of the current data.\nAn unexpected error occured.\n\nTried to install: %0").arg(package->path));
 				}
 			}
 			else
@@ -2192,6 +2197,7 @@ void main_window::EnableMenus(bool enabled) const
 	// Tools
 	ui->toolskernel_explorerAct->setEnabled(enabled);
 	ui->toolsmemory_viewerAct->setEnabled(enabled);
+	ui->toolsDumpGuestMemoryAct->setEnabled(enabled);
 	ui->toolsRsxDebuggerAct->setEnabled(enabled);
 	ui->toolsSystemCommandsAct->setEnabled(enabled);
 	ui->actionCreate_RSX_Capture->setEnabled(enabled);
@@ -3387,6 +3393,12 @@ void main_window::CreateConnects()
 			idm::make<memory_viewer_handle>(this, make_basic_ppu_disasm());
 	});
 
+	connect(ui->toolsDumpGuestMemoryAct, &QAction::triggered, this, [this]()
+	{
+		guest_memory_dumper* dumper = new guest_memory_dumper(this, true);
+		dumper->dump_guest_memory();
+	});
+
 	connect(ui->toolsRsxDebuggerAct, &QAction::triggered, this, [this]
 	{
 		rsx_debugger* rsx = new rsx_debugger(m_gui_settings);
@@ -3458,6 +3470,20 @@ void main_window::CreateConnects()
 	{
 		m_gui_settings->SetValue(gui::gl_show_hidden, checked);
 		m_game_list_frame->SetShowHidden(checked);
+		m_game_list_frame->Refresh();
+	});
+
+	connect(ui->showBrokenEntriesAct, &QAction::triggered, this, [this](bool checked)
+	{
+		m_gui_settings->SetValue(gui::gl_show_broken, checked);
+		m_game_list_frame->SetShowBroken(checked);
+		m_game_list_frame->Refresh();
+	});
+
+	connect(ui->showCompletedEntriesAct, &QAction::triggered, this, [this](bool checked)
+	{
+		m_gui_settings->SetValue(gui::gl_show_completed, checked);
+		m_game_list_frame->SetShowCompleted(checked);
 		m_game_list_frame->Refresh();
 	});
 
@@ -3908,6 +3934,12 @@ void main_window::ConfigureGuiFromSettings()
 
 	ui->showHiddenEntriesAct->setChecked(m_gui_settings->GetValue(gui::gl_show_hidden).toBool());
 	m_game_list_frame->SetShowHidden(ui->showHiddenEntriesAct->isChecked()); // prevent GetValue in m_game_list_frame->LoadSettings
+
+	ui->showBrokenEntriesAct->setChecked(m_gui_settings->GetValue(gui::gl_show_broken).toBool());
+	m_game_list_frame->SetShowBroken(ui->showBrokenEntriesAct->isChecked()); // prevent GetValue in m_game_list_frame->LoadSettings
+
+	ui->showCompletedEntriesAct->setChecked(m_gui_settings->GetValue(gui::gl_show_completed).toBool());
+	m_game_list_frame->SetShowCompleted(ui->showCompletedEntriesAct->isChecked()); // prevent GetValue in m_game_list_frame->LoadSettings
 
 	ui->showCompatibilityInGridAct->setChecked(m_gui_settings->GetValue(gui::gl_draw_compat).toBool());
 	ui->actionPreferGameDataIcons->setChecked(m_gui_settings->GetValue(gui::gl_pref_gd_icon).toBool());

@@ -244,7 +244,6 @@ namespace asmjit
 
 		void vec_load_unaligned(u32 esize, const Operand& v, const x86::Mem& src);
 		void vec_store_unaligned(u32 esize, const Operand& v, const x86::Mem& dst);
-		void vec_partial_move(u32 esize, const Operand& dst, const Operand& src);
 
 		void _vec_binary_op(x86::Inst::Id sse_op, x86::Inst::Id vex_op, x86::Inst::Id evex_op, const Operand& dst, const Operand& lhs, const Operand& rhs);
 
@@ -434,13 +433,35 @@ namespace asmjit
 #endif
 }
 
+#ifdef __APPLE__
+struct jit_write_guard
+{
+	jit_write_guard() noexcept
+	{
+		pthread_jit_write_protect_np(false);
+
+		// Ensure stores are not reordered by the compiler
+		atomic_fence_acq_rel();
+	}
+
+	~jit_write_guard() noexcept
+	{
+		// Ensure stores are not reordered by the compiler
+		atomic_fence_seq_cst();
+
+		pthread_jit_write_protect_np(true);
+	}
+};
+#else
+#define jit_write_guard [[maybe_unused]] int
+#endif
+
 // Build runtime function with asmjit::X86Assembler
 template <typename FT, typename Asm = native_asm, typename F>
 inline FT build_function_asm(std::string_view name, F&& builder, ::jit_runtime* custom_runtime = nullptr, bool reduced_size = false)
 {
-#ifdef __APPLE__
-	pthread_jit_write_protect_np(false);
-#endif
+	jit_write_guard jit_guard;
+
 	using namespace asmjit;
 
 	auto& rt = custom_runtime ? *custom_runtime : get_global_runtime();

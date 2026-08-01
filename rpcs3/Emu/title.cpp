@@ -49,6 +49,11 @@ namespace rpcs3
 					title_string += '%';
 					break;
 				}
+				case 'A':
+				{
+					title_string += utils::get_architecture();
+					break;
+				}
 				case 'T':
 				{
 					title_string += title_data.title;
