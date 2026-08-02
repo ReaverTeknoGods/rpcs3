@@ -89,15 +89,26 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/rpcs3x6-v* ]]; then
             version_name="${GITHUB_REF_NAME#rpcs3x6-v}"
             release_build=true
+            [[ "$version_name" =~ ^0\.0\.([0-9]+)\.([0-9]+)$ ]] || {
+              echo "Tagged RPCS3X6 releases must use 0.0.BUILD.REVISION" >&2
+              exit 1
+            }
+            build_number="${BASH_REMATCH[1]}"
+            revision_number="${BASH_REMATCH[2]}"
+            (( 10#$revision_number < 100 )) || {
+              echo "RPCS3X6 release revision must be below 100" >&2
+              exit 1
+            }
+            version_code=$((10#$build_number * 100 + 10#$revision_number))
           else
             version_name="0.0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
             release_build=false
+            version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
           fi
           [[ "$version_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
             echo "Version must contain four numeric parts: $version_name" >&2
             exit 1
           }
-          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "release_build=$release_build" >> "$GITHUB_OUTPUT"
