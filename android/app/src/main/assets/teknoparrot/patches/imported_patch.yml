@@ -1,0 +1,12 @@
+Version: 1.2
+
+PPU-e50fa5cf4d2da133f737b1d66ffe373a33b590a0:
+  "Disable X axis Accel Curve":
+    Games:
+      "SCEEXE000":
+        SCEEXE000: [ 01.00 ]
+    Author: EmiMidnight
+    Patch Version: 1.0
+    Notes: Disables the X axis accel curve.
+    Patch:
+      - [ be32, 0x0106C864, 0x3F800000 ]

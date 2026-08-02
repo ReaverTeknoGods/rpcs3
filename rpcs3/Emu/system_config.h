@@ -317,7 +317,8 @@ struct cfg_root : cfg::node
 		cfg::_enum<time_format> time_fmt{ this, "Time Format", time_format::clock24 };
 		cfg::_int<-60*60*24*365*100LL, 60*60*24*365*100LL> console_time_offset{ this, "Console time offset (s)", 0 }; // console time offset, limited to +/-100years
 		cfg::string system_name{this, "System Name", get_random_system_name()};
-		cfg::uint128 console_psid{this, "Console PSID", get_random_psid()};
+		// Default zero matches pre-86b7ccef9 behavior; arcade titles (AKB48, Taiko, etc.) bind PSID into board_storage state and break with a random PSID per launch.
+		cfg::uint128 console_psid{this, "Console PSID", u128{}};
 		cfg::string hdd_model{this, "HDD Model Name", ""};
 		cfg::string hdd_serial{this, "HDD Serial Number", ""};
 		cfg::node_map_entry sup_argv{ this, "Process ARGV" };

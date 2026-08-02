@@ -15,7 +15,7 @@ env:
 
 jobs:
   Windows_Build:
-    if: github.event_name == 'workflow_dispatch'
+    if: github.repository == 'RPCS3/rpcs3' && github.event_name == 'workflow_dispatch'
     name: LLVM Windows (MSVC)
     runs-on: windows-2025-vs2026
     env:

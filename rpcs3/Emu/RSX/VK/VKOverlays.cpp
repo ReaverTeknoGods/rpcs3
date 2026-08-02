@@ -20,6 +20,8 @@
 
 namespace vk
 {
+	ui_overlay_renderer::~ui_overlay_renderer() = default;
+
 	overlay_pass::overlay_pass()
 	{
 		// Override-able defaults

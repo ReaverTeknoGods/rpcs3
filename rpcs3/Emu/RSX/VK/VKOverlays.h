@@ -145,6 +145,7 @@ namespace vk
 		static constexpr u32 fragment_push_constants_size = 60;
 
 		ui_overlay_renderer();
+		~ui_overlay_renderer() override;
 
 		void upload_simple_texture(vk::image* tex, vk::command_buffer& cmd,
 			vk::data_heap& upload_heap, u32 w, u32 h, u32 layers, bool font, const void* pixel_src);

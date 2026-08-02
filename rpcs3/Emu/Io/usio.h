@@ -3,6 +3,11 @@
 #include "Emu/system_utils.hpp"
 #include "Emu/Io/usb_device.h"
 
+#ifdef __ANDROID__
+void usio_set_android_arcade_input(u64 control, const std::array<u8, 7>& analog,
+	bool coin, bool test, bool card);
+#endif
+
 class usb_device_usio : public usb_device_emulated
 {
 public:

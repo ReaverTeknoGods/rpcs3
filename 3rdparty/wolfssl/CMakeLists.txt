@@ -4,7 +4,14 @@ if(USE_SYSTEM_WOLFSSL)
 	add_library(wolfssl INTERFACE)
 	target_link_libraries(wolfssl INTERFACE PkgConfig::WolfSSL)
 else()
-	set(WOLFSSL_TLS13 OFF CACHE INTERNAL "")
+	# Newer curl uses wolfSSL_CTX_set1_groups_list when OPENSSL_EXTRA is enabled.
+	# wolfSSL only provides that symbol when TLS 1.3 is built as well, so keep the
+	# Android static curl/wolfSSL pair feature-compatible at link time.
+	if(ANDROID)
+		set(WOLFSSL_TLS13 ON CACHE INTERNAL "" FORCE)
+	else()
+		set(WOLFSSL_TLS13 OFF CACHE INTERNAL "")
+	endif()
 	set(WOLFSSL_SHA3 ON CACHE INTERNAL "")
 	set(WOLFSSL_SHAKE256 ON CACHE INTERNAL "")
 	set(WOLFSSL_BASE64_ENCODE OFF CACHE INTERNAL "")

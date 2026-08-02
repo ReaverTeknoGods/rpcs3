@@ -15,7 +15,9 @@
 #ifdef HAVE_SDL3
 #include "sdl_pad_handler.h"
 #endif
-#ifndef ANDROID
+#ifdef ANDROID
+#include "android_pad_handler.h"
+#else
 #include "keyboard_pad_handler.h"
 #endif
 #include "Emu/Io/Null/NullPadHandler.h"
@@ -82,7 +84,9 @@ void pad_thread::Init()
 	std::lock_guard lock(pad::g_pad_mutex);
 
 	// Reset mouse-based gyro state
+#ifndef ANDROID
 	m_mouse_gyro.set_enabled(g_cfg.io.mouse_based_gyro_enabled.get());
+#endif
 
 	// Cache old settings if possible
 	std::array<pad_setting, CELL_PAD_MAX_PORT_NUM> pad_settings;
@@ -154,7 +158,9 @@ void pad_thread::Init()
 
 	input_log.trace("Using pad config:\n%s", g_cfg_input);
 
-#ifndef ANDROID
+#ifdef ANDROID
+	std::shared_ptr<android_pad_handler> keyptr;
+#else
 	std::shared_ptr<keyboard_pad_handler> keyptr;
 #endif
 
@@ -177,13 +183,14 @@ void pad_thread::Init()
 		{
 			if (handler_type == pad_handler::keyboard)
 			{
-#ifndef ANDROID
+#ifdef ANDROID
+				keyptr = std::make_shared<android_pad_handler>();
+				cur_pad_handler = keyptr;
+#else
 				keyptr = std::make_shared<keyboard_pad_handler>();
 				keyptr->moveToThread(static_cast<QThread*>(m_curthread));
 				keyptr->SetTargetWindow(static_cast<QWindow*>(m_curwindow));
 				cur_pad_handler = keyptr;
-#else
-				cur_pad_handler = nullpad;
 #endif
 			}
 			else
@@ -612,7 +619,9 @@ void pad_thread::operator()()
 
 			// Apply mouse-based gyro emulation.
 			// Intentionally bound to Player 1 only.
+#ifndef ANDROID
 			m_mouse_gyro.apply_gyro(m_pads[0]);
+#endif
 		}
 
 		m_info.now_connect = connected_devices + num_ldd_pad;
@@ -858,7 +867,7 @@ std::shared_ptr<PadHandlerBase> pad_thread::GetHandler(pad_handler type)
 		return std::make_shared<NullPadHandler>();
 	case pad_handler::keyboard:
 #ifdef ANDROID
-		return std::make_shared<NullPadHandler>();
+		return std::make_shared<android_pad_handler>();
 #else
 		return std::make_shared<keyboard_pad_handler>();
 #endif

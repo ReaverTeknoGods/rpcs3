@@ -1,0 +1,50 @@
+$(EmulatorDir): ""
+/dev_hdd0/: $(EmulatorDir)/Tekken6/dev_hdd0/
+/dev_hdd1/: $(EmulatorDir)/Tekken6/dev_hdd1/
+/dev_flash/: $(EmulatorDir)dev_flash/
+/dev_flash2/: $(EmulatorDir)dev_flash2/
+/dev_flash3/: $(EmulatorDir)dev_flash3/
+/dev_bdvd/: $(EmulatorDir)/Tekken6/dev_bdvd/
+/games/: $(EmulatorDir)/Tekken6/games/
+/app_home/: ""
+/dev_usb***/:
+  /dev_usb000:
+    Path: $(EmulatorDir)/Tekken6/dev_usb000/
+    Serial: 76C0D0000000
+    VID: 0693
+    PID: 0026
+  /dev_usb001:
+    Path: ""
+    Serial: ""
+    VID: ""
+    PID: ""
+  /dev_usb002:
+    Path: ""
+    Serial: ""
+    VID: ""
+    PID: ""
+  /dev_usb003:
+    Path: ""
+    Serial: ""
+    VID: ""
+    PID: ""
+  /dev_usb004:
+    Path: ""
+    Serial: ""
+    VID: ""
+    PID: ""
+  /dev_usb005:
+    Path: ""
+    Serial: ""
+    VID: ""
+    PID: ""
+  /dev_usb006:
+    Path: ""
+    Serial: ""
+    VID: ""
+    PID: ""
+  /dev_usb007:
+    Path: ""
+    Serial: 76C0D0003038
+    VID: 0693
+    PID: 0026

@@ -1,0 +1,13 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+.cxx-*/
+app/.cxx/
+app/.cxx-*/
+app/build/
+app/src/main/cpp/compile_commands.json

@@ -3,9 +3,10 @@ if(USE_SYSTEM_ZLIB)
     find_package(ZLIB)
     list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR})
 else()
+    get_filename_component(RPCS3_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
     add_library(ZLIB::ZLIB STATIC IMPORTED)
     set_target_properties(ZLIB::ZLIB PROPERTIES
         IMPORTED_LOCATION "${CMAKE_BINARY_DIR}/3rdparty/zlib/zlib/libzlibstatic.a"
-        INTERFACE_INCLUDE_DIRECTORIES "${CMAKE_SOURCE_DIR}/3rdparty/zlib/zlib;${CMAKE_BINARY_DIR}/3rdparty/zlib/zlib")
+        INTERFACE_INCLUDE_DIRECTORIES "${RPCS3_ROOT_DIR}/3rdparty/zlib/zlib;${CMAKE_BINARY_DIR}/3rdparty/zlib/zlib")
     set(ZLIB_FOUND TRUE)
 endif()

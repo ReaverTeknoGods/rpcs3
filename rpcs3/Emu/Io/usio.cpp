@@ -5,8 +5,51 @@
 #include "Input/pad_thread.h"
 #include "Emu/Io/usio_config.h"
 #include "Emu/IdManager.h"
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 LOG_CHANNEL(usio_log, "USIO");
+
+// TeknoParrot shared memory globals
+#ifdef _WIN32
+static void* g_teknoparrot_file_mapping = nullptr;
+static void* g_teknoparrot_view_ptr = nullptr;
+#endif
+static bool g_coin_pressed_prev = false;
+// Card-entry edge-detect, one per supported player (P1=byte31, P2=30, P3=29, P4=28)
+static u8 g_card_state_prev[4] = {0, 0, 0, 0};
+
+#ifdef __ANDROID__
+struct android_arcade_input
+{
+	u64 control = 0;
+	std::array<u8, 7> analog{};
+	u8 coin = 0;
+	u8 test = 0;
+	u8 card = 0;
+};
+
+static std::mutex g_android_arcade_mutex;
+static android_arcade_input g_android_arcade_input;
+
+void usio_set_android_arcade_input(u64 control, const std::array<u8, 7>& analog,
+	bool coin, bool test, bool card)
+{
+	std::lock_guard lock(g_android_arcade_mutex);
+	g_android_arcade_input.control = control;
+	g_android_arcade_input.analog = analog;
+	g_android_arcade_input.coin = coin;
+	g_android_arcade_input.test = test ? 0x80 : 0;
+	g_android_arcade_input.card = card;
+}
+
+static android_arcade_input get_android_arcade_input()
+{
+	std::lock_guard lock(g_android_arcade_mutex);
+	return g_android_arcade_input;
+}
+#endif
 
 template <>
 void fmt_class_string<usio_btn>::format(std::string& out, u64 arg)
@@ -73,8 +116,8 @@ usb_device_usio::usb_device_usio(const std::array<u8, 7>& location)
 			.bDeviceProtocol    = 0xff,
 			.bMaxPacketSize0    = 0x8,
 			.idVendor           = 0x0b9a,
-			.idProduct          = 0x0910,
-			.bcdDevice          = 0x0910,
+			.idProduct          = 0x0900,
+			.bcdDevice          = 0x0900,
 			.iManufacturer      = 0x01,
 			.iProduct           = 0x02,
 			.iSerialNumber      = 0x00,
@@ -121,12 +164,60 @@ usb_device_usio::usb_device_usio(const std::array<u8, 7>& location)
 			.wMaxPacketSize   = 0x0008,
 			.bInterval        = 16}));
 
+#ifdef _WIN32
+	// Initialize TeknoParrot shared memory
+	if (!g_teknoparrot_file_mapping)
+	{
+		g_teknoparrot_file_mapping = CreateFileMappingA(
+			INVALID_HANDLE_VALUE,
+			nullptr,
+			PAGE_READWRITE,
+			0,
+			64,
+			"TeknoParrot_JvsState"
+		);
+
+		if (g_teknoparrot_file_mapping)
+		{
+			g_teknoparrot_view_ptr = MapViewOfFile(
+				g_teknoparrot_file_mapping,
+				FILE_MAP_ALL_ACCESS,
+				0,
+				0,
+				64
+			);
+
+			if (g_teknoparrot_view_ptr)
+				usio_log.notice("TeknoParrot shared memory initialized successfully");
+			else
+				usio_log.error("Failed to map TeknoParrot shared memory view");
+		}
+		else
+		{
+			usio_log.error("Failed to create TeknoParrot shared memory mapping");
+		}
+	}
+#endif
+
 	load_backup();
 }
 
 usb_device_usio::~usb_device_usio()
 {
 	save_backup();
+
+#ifdef _WIN32
+	if (g_teknoparrot_view_ptr)
+	{
+		UnmapViewOfFile(g_teknoparrot_view_ptr);
+		g_teknoparrot_view_ptr = nullptr;
+	}
+	if (g_teknoparrot_file_mapping)
+	{
+		CloseHandle(g_teknoparrot_file_mapping);
+		g_teknoparrot_file_mapping = nullptr;
+	}
+#endif
 }
 
 std::shared_ptr<usb_device> usb_device_usio::make_instance(u32, const std::array<u8, 7>& location)
@@ -206,6 +297,201 @@ void usb_device_usio::save_backup()
 
 	usio_backup_file.write(g_fxo->get<usio_memory>().backup_memory.data(), file_size);
 	usio_backup_file.trunc(file_size);
+}
+
+void usb_device_usio::translate_input_0x1080()
+{
+	std::vector<u8> input_buf(0x60);
+	constexpr le_t<u16> c_hit = 0x1800;
+	le_t<u16> digital_input = 0;
+	auto& status = m_io_status[0];
+
+	u32 tekno_control = 0;
+	u8 coin_state = 0;
+	u8 card_state[2] = {0, 0}; // Taiko has at most 2 players per cab; P1=byte31, P2=byte30
+
+#ifdef _WIN32
+	if (g_teknoparrot_view_ptr)
+	{
+		u8* tp = static_cast<u8*>(g_teknoparrot_view_ptr);
+		tekno_control = *reinterpret_cast<u32*>(tp + 8);
+		coin_state = tp[32];
+		card_state[0] = tp[31]; // P1 card entry
+		card_state[1] = tp[30]; // P2 card entry
+	}
+#elif defined(__ANDROID__)
+	const auto input = get_android_arcade_input();
+	tekno_control = static_cast<u32>(input.control);
+	coin_state = input.coin;
+	card_state[0] = input.card;
+#endif
+
+	if (tekno_control & 0x02) digital_input |= 0x200;  // P1 Start/Enter
+	if (tekno_control & 0x40) digital_input |= 0x4000; // P1 Service
+	if (tekno_control & 0x800) digital_input |= 0x2000; // P1 Up
+	if (tekno_control & 0x2000) digital_input |= 0x1000; // P1 Down
+
+	for (int player = 0; player < 2; player++)
+	{
+		const usz offset = player * 8ULL;
+		if ((player == 0 && (tekno_control & 0x04)) || (player == 1 && (tekno_control & 0x10)))
+			std::memcpy(input_buf.data() + 34 + offset, &c_hit, sizeof(u16)); // Center Left
+		if ((player == 0 && (tekno_control & 0x20)) || (player == 1 && (tekno_control & 0x80)))
+			std::memcpy(input_buf.data() + 36 + offset, &c_hit, sizeof(u16)); // Center Right
+		if ((player == 0 && (tekno_control & 0x200)) || (player == 1 && (tekno_control & 0x4000)))
+			std::memcpy(input_buf.data() + 32 + offset, &c_hit, sizeof(u16)); // Side Left
+		if ((player == 0 && (tekno_control & 0x80000)) || (player == 1 && (tekno_control & 0x800000)))
+			std::memcpy(input_buf.data() + 38 + offset, &c_hit, sizeof(u16)); // Side Right
+	}
+
+	bool test_pressed_now = (tekno_control & 0x01) != 0;
+	if (test_pressed_now && !status.test_key_pressed)
+		status.test_on = !status.test_on;
+	status.test_key_pressed = test_pressed_now;
+
+	if (status.test_on)
+		digital_input |= 0x80;
+
+#if defined(_WIN32) || defined(__ANDROID__)
+	bool coin_pressed_now = (coin_state != 0);
+	if (coin_pressed_now && !g_coin_pressed_prev)
+	{
+		m_io_status[0].coin_counter++;
+		usio_log.trace("Taiko coin inserted, counter now: %d", m_io_status[0].coin_counter);
+	}
+	g_coin_pressed_prev = coin_pressed_now;
+
+	// Card entry: reset every frame, then set per held TP card-tap byte (rising edge logged)
+	for (usz i = 0; i < m_io_status.size(); i++)
+		m_io_status[i].card_tapped = false;
+	for (usz p = 0; p < 2; p++)
+	{
+		if (card_state[p] != 0)
+		{
+			tap_card(p);
+			if (g_card_state_prev[p] == 0)
+				usio_log.notice("Taiko card tapped (player %u)", p + 1);
+		}
+		g_card_state_prev[p] = card_state[p];
+	}
+#endif
+
+	std::memcpy(input_buf.data(), &digital_input, sizeof(u16));
+	std::memcpy(input_buf.data() + 16, &m_io_status[0].coin_counter, sizeof(u16));
+
+	response = std::move(input_buf);
+}
+
+void usb_device_usio::translate_input_0x1000()
+{
+	std::vector<u8> input_buf(0x180);
+	le_t<u64> digital_input[2]{};
+	le_t<u16> digital_input_lm = 0;
+	auto& status = m_io_status[0];
+
+	u64 tekno_control = 0;
+	u8 analog_data[7] = {0};
+	u8 rotary_encoders[4] = {0};
+	u8 coin_state = 0;
+	u8 test_state = 0;
+	u8 card_state[4] = {0, 0, 0, 0}; // P1=byte31, P2=byte30, P3=byte29, P4=byte28 (Tekken Pair Play, etc.)
+
+#ifdef _WIN32
+	if (g_teknoparrot_view_ptr)
+	{
+		u8* tp = static_cast<u8*>(g_teknoparrot_view_ptr);
+		tekno_control      = *reinterpret_cast<u64*>(tp + 8);
+		analog_data[0]     = tp[16];
+		analog_data[1]     = tp[17];
+		analog_data[2]     = tp[18];
+		analog_data[3]     = tp[19];
+		analog_data[4]     = tp[20]; // Dark Escape vital sensor P1
+		analog_data[5]     = tp[21]; // Dark Escape vital sensor P2
+		analog_data[6]     = tp[22];
+		rotary_encoders[0] = tp[23];
+		rotary_encoders[1] = tp[24];
+		rotary_encoders[2] = tp[25];
+		rotary_encoders[3] = tp[26];
+		card_state[3]      = tp[28]; // P4 card entry
+		card_state[2]      = tp[29]; // P3 card entry
+		card_state[1]      = tp[30]; // P2 card entry
+		card_state[0]      = tp[31]; // P1 card entry
+		coin_state         = tp[32];
+		test_state         = tp[33];
+	}
+#elif defined(__ANDROID__)
+	const auto input = get_android_arcade_input();
+	tekno_control = input.control;
+	std::copy(input.analog.begin(), input.analog.end(), analog_data);
+	coin_state = input.coin;
+	test_state = input.test;
+	card_state[0] = input.card;
+#endif
+
+	digital_input[0] = tekno_control;
+
+	bool test_pressed_now = (test_state & 0x80) != 0;
+	if (test_pressed_now && !status.test_key_pressed)
+		status.test_on = !status.test_on;
+	status.test_key_pressed = test_pressed_now;
+
+	if (status.test_on)
+	{
+		digital_input[0] |= 0x80;
+		digital_input_lm |= 0x1000;
+	}
+
+#if defined(_WIN32) || defined(__ANDROID__)
+	bool coin_pressed_now = (coin_state != 0);
+	if (coin_pressed_now && !g_coin_pressed_prev)
+	{
+		m_io_status[0].coin_counter++;
+		usio_log.notice("Coin inserted, counter now: %d", m_io_status[0].coin_counter);
+	}
+	g_coin_pressed_prev = coin_pressed_now;
+
+	// Card entry: reset every frame, then set per held TP card-tap byte (rising edge logged)
+	for (usz i = 0; i < m_io_status.size(); i++)
+		m_io_status[i].card_tapped = false;
+	for (usz p = 0; p < 4; p++)
+	{
+		if (card_state[p] != 0)
+		{
+			tap_card(p);
+			if (g_card_state_prev[p] == 0)
+				usio_log.notice("Card tapped (player %u)", p + 1);
+		}
+		g_card_state_prev[p] = card_state[p];
+	}
+#endif
+
+	for (usz i = 0; i < 2; i++)
+	{
+		std::memcpy(input_buf.data() + 0x80 + i * 0x80, &digital_input[i], sizeof(u64));
+		std::memcpy(input_buf.data() + 0x80 + i * 0x80 + 0x10, &m_io_status[i].coin_counter, sizeof(u16));
+	}
+
+	for (int board = 0; board < 2; ++board)
+	{
+		for (int axis = 0; axis < static_cast<int>(sizeof(analog_data)); ++axis)
+		{
+			u16 val = static_cast<u16>(analog_data[axis]) * 257;
+			auto* axis_ptr = reinterpret_cast<u16*>(input_buf.data() + 0xA0 + board * 0x80 + axis * 2);
+			*axis_ptr = val;
+		}
+	}
+
+	for (int board = 0; board < 2; ++board)
+	{
+		u8* enc = input_buf.data() + 0xB0 + board * 0x80;
+		for (int i = 0; i < 4; ++i)
+			enc[i] = rotary_encoders[i];
+	}
+
+	std::memcpy(input_buf.data(), &digital_input_lm, sizeof(u16));
+	input_buf[2] = 0b00010000; // DIP switches
+
+	response = std::move(input_buf);
 }
 
 void usb_device_usio::translate_input_taiko()
@@ -654,7 +940,8 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 		}
 		case 0x0028:
 		{
-			usio_log.trace("SetExpansionMode: 0x%04X", get_u16("SetExpansionMode"));
+			expansion_mode = get_u16("SetExpansionMode");
+			usio_log.trace("SetExpansionMode: 0x%04X", expansion_mode);
 			break;
 		}
 		case 0x0048:
@@ -662,7 +949,10 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 		case 0x0068:
 		case 0x0078:
 		{
-			usio_log.trace("SetHopperRequest(Hopper: %d, Request: 0x%04X)", (reg - 0x48) / 0x10, get_u16("SetHopperRequest"));
+			const usz hopper_idx = (reg - 0x48) / 0x10;
+			if (hopper_idx < hoppers.size())
+				hoppers[hopper_idx] = get_u16("SetHopperRequest");
+			usio_log.trace("SetHopperRequest(Hopper: %d, Request: 0x%04X)", hopper_idx, get_u16("SetHopperRequest"));
 			break;
 		}
 		case 0x004A:
@@ -670,7 +960,7 @@ void usb_device_usio::usio_write(u8 channel, u16 reg, std::vector<u8>& data)
 		case 0x006A:
 		case 0x007A:
 		{
-			usio_log.trace("SetHopperRequest(Hopper: %d, Limit: 0x%04X)", (reg - 0x4A) / 0x10, get_u16("SetHopperLimit"));
+			usio_log.trace("SetHopperLimit(Hopper: %d, Limit: 0x%04X)", (reg - 0x4A) / 0x10, get_u16("SetHopperLimit"));
 			break;
 		}
 		case 0x0080:
@@ -717,10 +1007,66 @@ void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
 		{
 		case 0x0000:
 		{
-			// Get Buffer, rarely gives a reply on real HW
-			// First U16 seems to be a timestamp of sort
-			// Purpose seems related to connectivity check
+			// Razing Storm / Dark Escape 4D gun IO status (and connectivity check)
+			// First U16 seems to be a timestamp of sort, [2]/[3] are error flags.
 			response = {0x7E, 0xE4, 0x00, 0x00, 0x74, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7E, 0x00, 0x7E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+			response.resize(0x100); // Razing storm needs the full 0x100 bytes for gun data etc.
+
+			// IO board count
+			response[0x22] = 0x01;
+
+			// Expansion mode written by SetExpansionMode (reg 0x0028).
+			// If not echoed back, razing storm keeps re-sending it every frame and tanks fps.
+			response[0x28] = expansion_mode & 0xFF;
+			response[0x29] = expansion_mode >> 8;
+
+			// Mode of the gundrive board (razing storm sets it via hopper request 0x48).
+			// 0x9000 = mode 5 (gun sensor check), 0x8000 = mode 4 (guns work ingame).
+			response[0x40] = 0x00;
+			response[0x41] = hoppers[0] >> 8;
+
+			// Gun sensor states (P1 / P2). Razing storm reads these twice (one per player).
+			response[0x44] = 0xFF;
+			response[0x45] = 0xFF;
+			response[0x46] = 0xFF;
+			response[0x47] = 0xFF;
+
+			response[0x54] = 0x00; // P1 gun status, needs to be 0 for the gun to work
+			response[0x5C] = 0x00; // P2 gun status
+
+			u8 analog_data[7] = {0}; // P1X, P1Y, P2X, P2Y, plus extras
+
+#ifdef _WIN32
+			if (g_teknoparrot_view_ptr)
+			{
+				analog_data[0] = static_cast<u8*>(g_teknoparrot_view_ptr)[16];
+				analog_data[1] = static_cast<u8*>(g_teknoparrot_view_ptr)[17];
+				analog_data[2] = static_cast<u8*>(g_teknoparrot_view_ptr)[18];
+				analog_data[3] = static_cast<u8*>(g_teknoparrot_view_ptr)[19];
+				analog_data[4] = static_cast<u8*>(g_teknoparrot_view_ptr)[20];
+				analog_data[5] = static_cast<u8*>(g_teknoparrot_view_ptr)[21];
+				analog_data[6] = static_cast<u8*>(g_teknoparrot_view_ptr)[22];
+			}
+#elif defined(__ANDROID__)
+			const auto input = get_android_arcade_input();
+			std::copy(input.analog.begin(), input.analog.end(), analog_data);
+#endif
+
+			// razing storm guns: scale 8-bit TP value to 16-bit (== * 257)
+			const u16 p1_x = (static_cast<u16>(analog_data[0]) * 65535) / 255;
+			const u16 p1_y = (static_cast<u16>(analog_data[1]) * 65535) / 255;
+			const u16 p2_x = (static_cast<u16>(analog_data[2]) * 65535) / 255;
+			const u16 p2_y = (static_cast<u16>(analog_data[3]) * 65535) / 255;
+
+			response[0x50] = p1_x & 0xFF;
+			response[0x51] = p1_x >> 8;
+			response[0x52] = p1_y & 0xFF;
+			response[0x53] = p1_y >> 8;
+
+			response[0x58] = p2_x & 0xFF;
+			response[0x59] = p2_x >> 8;
+			response[0x5A] = p2_y & 0xFF;
+			response[0x5B] = p2_y >> 8;
 			break;
 		}
 		case 0x0080:
@@ -733,14 +1079,28 @@ void usb_device_usio::usio_read(u8 channel, u16 reg, u16 size)
 		}
 		case 0x1000:
 		{
-			// Often called, gets input from usio for Tekken
+			// Gets input for Tekken / Razing Storm / general games
+#if defined(_WIN32) || defined(__ANDROID__)
+			translate_input_0x1000();
+#else
 			translate_input_tekken();
+#endif
 			break;
 		}
 		case 0x1080:
 		{
-			// Often called, gets input from usio for Taiko
+			// Gets input for Taiko
+#if defined(_WIN32) || defined(__ANDROID__)
+			translate_input_0x1080();
+#else
 			translate_input_taiko();
+#endif
+			break;
+		}
+		case 0x1400:
+		{
+			// LED feedback read (Taiko cabinet lights etc.) - acknowledge silently
+			usio_log.trace("LED feedback read (reg 0x1400, size 0x%04X)", size);
 			break;
 		}
 		case 0x1800:

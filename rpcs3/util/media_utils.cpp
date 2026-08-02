@@ -354,6 +354,7 @@ namespace utils
 	{
 		if (!codec) return false;
 
+#if LIBAVCODEC_VERSION_MAJOR >= 61
 		const void* sample_formats = nullptr;
 		int num = 0;
 
@@ -368,6 +369,9 @@ namespace utils
 
 		int i = 0;
 		for (const AVSampleFormat* fmt = static_cast<const AVSampleFormat*>(sample_formats); fmt && *fmt != AV_SAMPLE_FMT_NONE && i < num; fmt++, i++)
+#else
+		for (const AVSampleFormat* fmt = codec->sample_fmts; fmt && *fmt != AV_SAMPLE_FMT_NONE; fmt++)
+#endif
 		{
 			if (*fmt == sample_fmt)
 			{
@@ -385,21 +389,32 @@ namespace utils
 		if (!codec)
 			return default_sample_rate;
 
-		const void* sample_rates = nullptr;
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+		const void* sample_rates_raw = nullptr;
 		int num = 0;
 
-		if (const int err = avcodec_get_supported_config(nullptr, codec, AVCodecConfig::AV_CODEC_CONFIG_SAMPLE_RATE, 0, &sample_rates, &num))
+		if (const int err = avcodec_get_supported_config(nullptr, codec, AVCodecConfig::AV_CODEC_CONFIG_SAMPLE_RATE, 0, &sample_rates_raw, &num))
 		{
 			media_log.error("select_sample_rate: avcodec_get_supported_config error: %d='%s'", err, av_error_to_string(err));
 			return default_sample_rate;
 		}
 
+		const int* sample_rates = static_cast<const int*>(sample_rates_raw);
 		if (!sample_rates)
 			return default_sample_rate;
+#else
+		const int* sample_rates = codec->supported_samplerates;
+		if (!sample_rates)
+			return default_sample_rate;
+#endif
 
 		int i = 0;
 		int best_sample_rate = 0;
-		for (const int* sample_rate = static_cast<const int*>(sample_rates); sample_rate && *sample_rate != 0 && i < num; sample_rate++, i++)
+		for (const int* sample_rate = sample_rates; sample_rate && *sample_rate != 0
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+			&& i < num
+#endif
+			; sample_rate++, i++)
 		{
 			if (!best_sample_rate || abs(default_sample_rate - *sample_rate) < abs(default_sample_rate - best_sample_rate))
 			{
@@ -432,6 +447,7 @@ namespace utils
 	{
 		if (!codec) return nullptr;
 
+#if LIBAVCODEC_VERSION_MAJOR >= 61
 		const void* ch_layouts = nullptr;
 		int num = 0;
 
@@ -443,13 +459,25 @@ namespace utils
 
 		if (!ch_layouts)
 			return nullptr;
+#else
+		const AVChannelLayout* ch_layouts = codec->ch_layouts;
+		if (!ch_layouts)
+			return nullptr;
+#endif
 
 		const AVChannelLayout preferred_ch_layout = get_preferred_channel_layout(channels);
 		const AVChannelLayout* found_ch_layout = nullptr;
 
 		int i = 0;
-		for (const AVChannelLayout* ch_layout = static_cast<const AVChannelLayout*>(ch_layouts);
-			 i < num && ch_layout && memcmp(ch_layout, &empty_ch_layout, sizeof(AVChannelLayout)) != 0;
+		for (const AVChannelLayout* ch_layout =
+#if LIBAVCODEC_VERSION_MAJOR >= 61
+			 static_cast<const AVChannelLayout*>(ch_layouts);
+			 i < num && ch_layout &&
+#else
+			 ch_layouts;
+			 ch_layout &&
+#endif
+			 memcmp(ch_layout, &empty_ch_layout, sizeof(AVChannelLayout)) != 0;
 			 ch_layout++, i++)
 		{
 			media_log.notice("select_channel_layout: listing channel layout '%s' with %d channels", channel_layout_name(*ch_layout), ch_layout->nb_channels);
@@ -587,7 +615,7 @@ namespace utils
 			}
 
 			const int dst_channels = 2;
-			const AVChannelLayout dst_channel_layout = AV_CHANNEL_LAYOUT_STEREO;
+			AVChannelLayout dst_channel_layout = AV_CHANNEL_LAYOUT_STEREO;
 			const AVSampleFormat dst_format = AV_SAMPLE_FMT_FLT;
 
 			const int set_err = swr_alloc_set_opts2(&av.swr, &dst_channel_layout, dst_format,

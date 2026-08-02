@@ -1,3 +1,4 @@
 set(WOLFSSL_LIBRARY wolfssl)
-set(WOLFSSL_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/3rdparty/wolfssl)
+get_filename_component(RPCS3_ROOT_DIR "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+set(WOLFSSL_INCLUDE_DIR "${RPCS3_ROOT_DIR}/3rdparty/wolfssl")
 set(WOLFSSL_FOUND TRUE)

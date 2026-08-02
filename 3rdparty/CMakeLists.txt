@@ -237,6 +237,10 @@ if (NOT ANDROID)
 else()
 	add_library(3rdparty_openal INTERFACE)
 	target_compile_definitions(3rdparty_openal INTERFACE WITHOUT_OPENAL=1)
+	# cellMic's public declarations still use OpenAL handle types even when the
+	# backend is disabled. Export the bundled headers without building OpenAL so
+	# Android can compile those declarations.
+	target_include_directories(3rdparty_openal INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/OpenAL/openal-soft/include/AL")
 endif()
 
 # FAudio
