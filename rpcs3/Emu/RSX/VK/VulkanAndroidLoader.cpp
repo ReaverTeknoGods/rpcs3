@@ -108,7 +108,7 @@ namespace vk
 			}
 			else
 			{
-				rsx_log.error("Could not initialize an Android Vulkan driver: %d", result);
+				rsx_log.error("Could not initialize an Android Vulkan driver: %d", static_cast<s32>(result));
 			}
 		});
 

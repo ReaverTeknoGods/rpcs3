@@ -6,7 +6,9 @@
 #elif defined(__APPLE__)
 #define VK_USE_PLATFORM_METAL_EXT
 #elif defined(ANDROID)
+#ifndef VK_USE_PLATFORM_ANDROID_KHR
 #define VK_USE_PLATFORM_ANDROID_KHR
+#endif
 #else
 #if defined(HAVE_X11)
  #define VK_USE_PLATFORM_XLIB_KHR

@@ -179,6 +179,10 @@ target_compile_options(rpcs3_emu PRIVATE
     -Wno-error=implicit-fallthrough
 )
 
+# VulkanAndroidLoader.cpp is part of rpcs3_emu, so make the custom-driver
+# headers and static implementation available to that target directly.
+target_link_libraries(rpcs3_emu PRIVATE adrenotools)
+
 add_library(${CMAKE_PROJECT_NAME} SHARED
     native-lib.cpp
     iso.cpp
