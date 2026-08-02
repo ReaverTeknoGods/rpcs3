@@ -34,6 +34,11 @@ object RPCS3Runtime {
             )
         ) return false
 
+        // Zero means RPCS3's platform-aware automatic worker count. Restore
+        // this on every launch so a diagnostic/manual override cannot leave
+        // Android shader compilation serialized.
+        if (!RPCS3.instance.settingsSet("Video@@Shader Compiler Threads", "0")) return false
+
         val nativeLibraryDir =
             context.packageManager.getApplicationInfo(context.packageName, 0).nativeLibraryDir
         RPCS3.instance.settingsSet(

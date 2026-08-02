@@ -21,7 +21,11 @@
 #pragma warning( disable : 4005 )
 #endif
 
+#ifdef ANDROID
+#include <volk.h>
+#else
 #include <vulkan/vulkan.h>
+#endif
 
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -59,4 +63,7 @@ constexpr VkStructureType VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_UNIFORM_BUFFE
 namespace vk
 {
 	void init();
+#ifdef ANDROID
+	bool initialize_android_vulkan();
+#endif
 }

@@ -110,9 +110,28 @@ bool CubebBackend::Open(std::string_view dev_id, AudioFreq freq, AudioSampleSize
 	if (use_default_device) Cubeb.notice("Trying to open default device");
 	else Cubeb.notice("Trying to open device with dev_id='%s'", dev_id);
 
-	device_handle device = GetDevice(use_default_device ? "" : dev_id);
+	device_handle device{};
+	bool use_implicit_default_device = false;
 
-	if (!device.handle)
+#ifdef __ANDROID__
+	// AAudio intentionally does not implement cubeb device enumeration and
+	// accepts a null device handle to select Android's default output. RPCS3's
+	// desktop path normally enumerates first, which made every Android open
+	// fail with CUBEB_ERROR_NOT_SUPPORTED before a stream was even attempted.
+	const char* backend_id = cubeb_get_backend_id(m_ctx);
+	use_implicit_default_device = use_default_device && backend_id && std::string_view(backend_id) == "aaudio";
+	if (use_implicit_default_device)
+	{
+		device.ch_cnt = 2;
+		Cubeb.notice("Using implicit AAudio default output device");
+	}
+	else
+#endif
+	{
+		device = GetDevice(use_default_device ? "" : dev_id);
+	}
+
+	if (!device.handle && !use_implicit_default_device)
 	{
 		if (use_default_device) Cubeb.error("Opening default device failed");
 		else Cubeb.error("Device with id=%s not found", dev_id);

@@ -663,6 +663,11 @@ if(TARGET 3rdparty_vulkan)
         RSX/VK/VKTextureCache.cpp
         RSX/VK/VulkanAPI.cpp
     )
+    if(ANDROID)
+        target_sources(rpcs3_emu PRIVATE
+            RSX/VK/VulkanAndroidLoader.cpp
+        )
+    endif()
     if(APPLE)
         target_sources(rpcs3_emu PRIVATE
             RSX/VK/vkutils/metal_layer.mm

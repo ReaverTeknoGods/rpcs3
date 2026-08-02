@@ -11,6 +11,54 @@ get_filename_component(RPCS3_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABS
 
 set(FFMPEG_VERSION 5.1)
 set(FFMPEG_SHA256 "2b5b6d028a2b2b57b17da26c1050aea8dc46b6302d05517c87bf75e184b6a3a6")
+set(TURNIP_VERSION "26.1.4")
+set(TURNIP_SHA256 "a559b4257d7964e8082d1bfcfc3fb77ea95cd1f8071ee6e0b3e6c0d859539fa0")
+
+include(FetchContent)
+set(VOLK_PULL_IN_VULKAN ON CACHE BOOL "" FORCE)
+set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_ANDROID_KHR CACHE STRING "" FORCE)
+FetchContent_Declare(
+    volk
+    GIT_REPOSITORY https://github.com/zeux/volk.git
+    GIT_TAG 4f3bcee79618a9abe79f4c717c50379197c77512
+)
+FetchContent_MakeAvailable(volk)
+
+set(TURNIP_ARCHIVE "${CMAKE_BINARY_DIR}/mesa-turnip-android-${TURNIP_VERSION}.zip")
+set(TURNIP_PATH "${CMAKE_BINARY_DIR}/mesa-turnip-android-${TURNIP_VERSION}")
+set(TURNIP_LIBRARY "${TURNIP_PATH}/libvulkan_freedreno.so")
+
+if(NOT EXISTS "${TURNIP_ARCHIVE}")
+    message(STATUS "Downloading Mesa Turnip ${TURNIP_VERSION}")
+    file(DOWNLOAD
+        "https://github.com/nihui/mesa-turnip-android-driver/releases/download/${TURNIP_VERSION}/mesa-turnip-android-${TURNIP_VERSION}.zip"
+        "${TURNIP_ARCHIVE}"
+        EXPECTED_HASH SHA256=${TURNIP_SHA256}
+        TLS_VERIFY ON
+        SHOW_PROGRESS
+    )
+endif()
+
+file(SHA256 "${TURNIP_ARCHIVE}" TURNIP_ACTUAL_SHA256)
+if(NOT TURNIP_ACTUAL_SHA256 STREQUAL TURNIP_SHA256)
+    message(FATAL_ERROR "Mesa Turnip archive SHA-256 mismatch")
+endif()
+
+if(NOT EXISTS "${TURNIP_LIBRARY}")
+    file(MAKE_DIRECTORY "${TURNIP_PATH}")
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -E tar xf "${TURNIP_ARCHIVE}"
+        WORKING_DIRECTORY "${TURNIP_PATH}"
+        RESULT_VARIABLE TURNIP_EXTRACT_RESULT
+    )
+    if(NOT TURNIP_EXTRACT_RESULT EQUAL 0)
+        message(FATAL_ERROR "Mesa Turnip archive extraction failed: ${TURNIP_EXTRACT_RESULT}")
+    endif()
+endif()
+
+if(NOT EXISTS "${TURNIP_LIBRARY}")
+    message(FATAL_ERROR "Mesa Turnip library was not extracted")
+endif()
 
 if (TEST_OVERRIDE_CPU)
     if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
@@ -162,4 +210,13 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     3rdparty::libcurl
     3rdparty::zlib
     3rdparty::fusion
+)
+
+# Gradle packages native libraries from the CMake target output directory.
+# Keep Turnip beside the frontend library so it can be loaded through the app's
+# isolated linker namespace without changing or rooting the device.
+add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${TURNIP_LIBRARY}"
+        "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/libvulkan_freedreno.so"
 )

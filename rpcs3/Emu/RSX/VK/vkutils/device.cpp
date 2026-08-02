@@ -811,6 +811,10 @@ namespace vk
 			vk::die_with_error(error);
 		}
 
+#ifdef ANDROID
+		volkLoadDevice(dev);
+#endif
+
 		// Dump some diagnostics to the log
 		rsx_log.notice("%u extensions loaded:", ::size32(requested_extensions));
 		for (const auto& ext : requested_extensions)

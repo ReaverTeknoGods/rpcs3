@@ -87,6 +87,13 @@ namespace vk
 #endif
 	bool instance::create(const char* app_name, bool fast)
 	{
+#ifdef ANDROID
+		if (!initialize_android_vulkan())
+		{
+			return false;
+		}
+#endif
+
 		// Initialize a vulkan instance
 		VkApplicationInfo app = {};
 
@@ -224,6 +231,10 @@ namespace vk
 
 			return false;
 		}
+
+#ifdef ANDROID
+		volkLoadInstanceOnly(m_instance);
+#endif
 
 		return true;
 	}

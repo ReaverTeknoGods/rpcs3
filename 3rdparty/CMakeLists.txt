@@ -186,7 +186,14 @@ if(USE_VULKAN)
 	if(VULKAN_FOUND)
 		add_library(3rdparty_vulkan INTERFACE)
 		target_compile_definitions(3rdparty_vulkan INTERFACE -DHAVE_VULKAN)
-		target_link_libraries(3rdparty_vulkan INTERFACE Vulkan::Vulkan)
+		if(ANDROID)
+			# Android selects either the packaged Turnip driver or the system
+			# Vulkan loader at runtime. Volk supplies the common dispatch table.
+			target_compile_definitions(3rdparty_vulkan INTERFACE VK_NO_PROTOTYPES)
+			target_link_libraries(3rdparty_vulkan INTERFACE volk::volk)
+		else()
+			target_link_libraries(3rdparty_vulkan INTERFACE Vulkan::Vulkan)
+		endif()
 
 		if(UNIX AND NOT APPLE AND NOT ANDROID)
 			find_package(Wayland)
