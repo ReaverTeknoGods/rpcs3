@@ -60,6 +60,12 @@ jobs:
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # RPCS3 carries historical third-party Android projects whose wrapper
+          # jars are not used by this build and are absent from Gradle's known
+          # checksum catalog. Validate the android/ wrapper in the build step
+          # instead of rejecting unrelated vendored wrappers during setup.
+          validate-wrappers: false
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
