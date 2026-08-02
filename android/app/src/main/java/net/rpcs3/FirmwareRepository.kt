@@ -20,9 +20,33 @@ private data class FirmwareInfo(val version: String?, val status: FirmwareStatus
 
 class FirmwareRepository {
     companion object {
+        private val requiredFirmwareFiles = listOf(
+            "config/dev_flash/vsh/module/vsh.self",
+            "config/dev_flash/vsh/etc/version.txt"
+        )
+
         val progressChannel: MutableState<Long?> = mutableStateOf(null)
         val version: MutableState<String?> = mutableStateOf(null)
         val status: MutableState<FirmwareStatus> = mutableStateOf(FirmwareStatus.None)
+
+        /**
+         * Treat the firmware as ready only after RPCS3 recorded a successful
+         * installation and the essential installed payload is still present.
+         * The file checks prevent a stale fw.json from authorizing an arcade
+         * launch after partial storage loss or manual file removal.
+         */
+        fun isReady(root: File): Boolean = runCatching {
+            val info = Json.decodeFromString<FirmwareInfo>(
+                File(root, "fw.json").readText()
+            )
+            if (info.status != FirmwareStatus.Installed &&
+                info.status != FirmwareStatus.Compiled
+            ) return@runCatching false
+
+            requiredFirmwareFiles.all { relativePath ->
+                File(root, relativePath).let { it.isFile && it.length() > 0L }
+            }
+        }.getOrDefault(false)
 
         fun save() {
                 try {

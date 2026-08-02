@@ -3,10 +3,6 @@ package net.rpcs3
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import java.io.File
 import kotlin.concurrent.thread
 
 class TeknoParrotSessionControlReceiver : BroadcastReceiver() {
@@ -100,13 +96,7 @@ class TeknoParrotSessionControlReceiver : BroadcastReceiver() {
     private fun sendFirmwareStatus(context: Context, token: String) {
         val ready = runCatching {
             val root = context.getExternalFilesDir(null) ?: return@runCatching false
-            val firmware = File(root, "fw.json")
-            if (!firmware.isFile) return@runCatching false
-            val status = Json.parseToJsonElement(firmware.readText())
-                .jsonObject["status"]
-                ?.jsonPrimitive
-                ?.content
-            status == FirmwareStatus.Installed.name || status == FirmwareStatus.Compiled.name
+            FirmwareRepository.isReady(root)
         }.getOrDefault(false)
 
         context.applicationContext.sendBroadcast(

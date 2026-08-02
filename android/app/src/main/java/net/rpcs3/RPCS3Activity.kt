@@ -82,6 +82,13 @@ class RPCS3Activity : Activity() {
         }
 
         if (companionSession) {
+            val firmwareRoot = getExternalFilesDir(null)
+            if (firmwareRoot == null || !FirmwareRepository.isReady(firmwareRoot)) {
+                Log.e("RPCS3X6 firmware", "Refusing arcade launch without installed PS3 firmware")
+                TeknoParrotSession.update(applicationContext, "failed")
+                finish()
+                return
+            }
             binding.padOverlay.isInvisible = true
             positionCompanionOverlayToggle()
             val profileName = intent.getStringExtra(TeknoParrotContract.EXTRA_PROFILE_NAME).orEmpty()
