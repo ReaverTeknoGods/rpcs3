@@ -1,6 +1,7 @@
 package net.rpcs3
 
 import android.content.Context
+import android.util.Log
 import java.io.File
 
 /** Installs the exact per-title VFS and patch data from the TeknoParrot RPCS3 release. */
@@ -36,6 +37,16 @@ object TeknoParrotArcadeConfig {
         val target = File(appRoot, "config/teknoparrot/$assetName")
         copyAsset(context, "teknoparrot/vfs/$assetName", target)
 
+        if (profileName == "DarkEscape4D") {
+            val result = runCatching {
+                DarkEscape4DPatches.applySensorMessagePatch(root, File(appRoot, "config"))
+            }.getOrElse {
+                Log.w(TAG, "Could not apply the Dark Escape sensor-message patch", it)
+                DarkEscape4DPatches.Result.Unsupported
+            }
+            Log.i(TAG, "Dark Escape sensor-message patch: $result")
+        }
+
         listOf("dev_hdd0", "dev_hdd1", "dev_bdvd", "games/shortcuts", "dev_usb000")
             .forEach { File(root, it).mkdirs() }
         val userDirectory = File(root, "dev_hdd0/home/00000001")
@@ -65,4 +76,6 @@ object TeknoParrotArcadeConfig {
             check(temporary.renameTo(target)) { "Could not install $assetPath" }
         }
     }
+
+    private const val TAG = "RPCS3X6 Arcade Config"
 }

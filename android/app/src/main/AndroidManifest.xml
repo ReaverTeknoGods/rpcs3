@@ -44,7 +44,7 @@
             android:launchMode="singleTop"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:permission="com.teknoparrot.permission.BIND_BRIDGE" >
+            android:permission="${bridgePermission}" >
             <intent-filter>
                 <action android:name="com.teknoparrot.rpcs3x6.action.LAUNCH_GAME" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -64,7 +64,7 @@
             android:configChanges="orientation|screenSize"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:permission="com.teknoparrot.permission.BIND_BRIDGE">
+            android:permission="${bridgePermission}">
             <intent-filter>
                 <action android:name="com.teknoparrot.rpcs3x6.action.SETUP" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -76,7 +76,7 @@
             android:configChanges="orientation|screenSize"
             android:excludeFromRecents="true"
             android:exported="true"
-            android:permission="com.teknoparrot.permission.BIND_BRIDGE">
+            android:permission="${bridgePermission}">
             <intent-filter>
                 <action android:name="com.teknoparrot.rpcs3x6.action.IMPORT_ARCADE_ROOT" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -86,7 +86,7 @@
         <receiver
             android:name=".TeknoParrotSessionControlReceiver"
             android:exported="true"
-            android:permission="com.teknoparrot.permission.BIND_BRIDGE">
+            android:permission="${bridgePermission}">
             <intent-filter>
                 <action android:name="com.teknoparrot.rpcs3x6.action.QUERY_SESSION" />
                 <action android:name="com.teknoparrot.rpcs3x6.action.STOP_GAME" />

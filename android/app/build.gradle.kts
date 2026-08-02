@@ -13,6 +13,13 @@ val companionVersionCode = providers.gradleProperty("rpcs3x6VersionCode")
     .orElse(providers.environmentVariable("RPCS3X6_VERSION_CODE"))
     .getOrElse("1")
     .toInt()
+val companionApplicationId = providers.gradleProperty("rpcs3x6ApplicationId")
+    .getOrElse("com.teknogods.rpcs3x6")
+val bridgePermission = if (companionApplicationId == "com.teknogods.rpcs3x6.local") {
+    ""
+} else {
+    "com.teknoparrot.permission.BIND_BRIDGE"
+}
 require(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+").matches(companionVersionName)) {
     "RPCS3X6 versionName must use four numeric parts (for example 0.0.1.42)"
 }
@@ -31,11 +38,12 @@ android {
     ndkVersion = "28.2.13676358"
 
     defaultConfig {
-        applicationId = "com.teknogods.rpcs3x6"
+        applicationId = companionApplicationId
         minSdk = 31
         targetSdk = 35
         versionCode = companionVersionCode
         versionName = companionVersionName
+        manifestPlaceholders["bridgePermission"] = bridgePermission
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
@@ -64,6 +72,11 @@ android {
             )
             if (hasReleaseKeystore) {
                 signingConfig = signingConfigs.getByName("release")
+            } else if (companionApplicationId == "com.teknogods.rpcs3x6.local") {
+                // Local device qualification must exercise the optimized native
+                // path used by production. Keep this fallback impossible for the
+                // production application ID, which is signed only by CI secrets.
+                signingConfig = signingConfigs.getByName("debug")
             }
         }
     }
