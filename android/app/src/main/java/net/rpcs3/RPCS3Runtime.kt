@@ -81,7 +81,7 @@ object RPCS3Runtime {
             }
             check(!target.exists() || target.delete()) { "Could not replace the previous Turnip library" }
             check(temporary.renameTo(target)) { "Could not install the packaged Turnip library" }
-            target
+            directory
         }.getOrNull()
 
     private const val TURNIP_LIBRARY_NAME = "libvulkan_freedreno.so"

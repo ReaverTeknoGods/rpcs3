@@ -11,8 +11,9 @@ get_filename_component(RPCS3_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../.." ABS
 
 set(FFMPEG_VERSION 5.1)
 set(FFMPEG_SHA256 "2b5b6d028a2b2b57b17da26c1050aea8dc46b6302d05517c87bf75e184b6a3a6")
-set(TURNIP_VERSION "26.1.4")
-set(TURNIP_SHA256 "a559b4257d7964e8082d1bfcfc3fb77ea95cd1f8071ee6e0b3e6c0d859539fa0")
+set(TURNIP_VERSION "gen8-v33")
+set(TURNIP_SHA256 "b8b67b04c1ba1e5243faa693eaed813da24f3203c2b11b52664dec00c5e66f43")
+set(TURNIP_URL "https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/download/v33/Turnip_Gen8_V33.zip")
 
 include(FetchContent)
 set(VOLK_PULL_IN_VULKAN ON CACHE BOOL "" FORCE)
@@ -40,7 +41,7 @@ set(TURNIP_LIBRARY "${TURNIP_PATH}/libvulkan_freedreno.so")
 if(NOT EXISTS "${TURNIP_ARCHIVE}")
     message(STATUS "Downloading Mesa Turnip ${TURNIP_VERSION}")
     file(DOWNLOAD
-        "https://github.com/nihui/mesa-turnip-android-driver/releases/download/${TURNIP_VERSION}/mesa-turnip-android-${TURNIP_VERSION}.zip"
+        "${TURNIP_URL}"
         "${TURNIP_ARCHIVE}"
         EXPECTED_HASH SHA256=${TURNIP_SHA256}
         TLS_VERIFY ON

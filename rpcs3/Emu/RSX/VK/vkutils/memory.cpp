@@ -179,6 +179,16 @@ namespace vk
 		allocatorInfo.instance = inst;
 		allocatorInfo.vulkanApiVersion = VK_API_VERSION_1_2;
 
+#ifdef ANDROID
+		// Android uses Volk without linking libvulkan directly. Newer VMA
+		// releases require both proc-address entry points in that configuration;
+		// the remaining allocator functions are imported from them dynamically.
+		VmaVulkanFunctions vulkan_functions = {};
+		vulkan_functions.vkGetInstanceProcAddr = vkGetInstanceProcAddr;
+		vulkan_functions.vkGetDeviceProcAddr = vkGetDeviceProcAddr;
+		allocatorInfo.pVulkanFunctions = &vulkan_functions;
+#endif
+
 		std::vector<VkDeviceSize> heap_limits;
 		const auto vram_allocation_limit = g_cfg.video.vk.vram_allocation_limit * 0x100000ull;
 		if (vram_allocation_limit < dev.get_memory_mapping().device_local_total_bytes)

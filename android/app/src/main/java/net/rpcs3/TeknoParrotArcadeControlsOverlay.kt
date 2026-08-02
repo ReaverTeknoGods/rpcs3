@@ -162,7 +162,8 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
     private fun publish() {
         val held = heldPointers.values + controllerHeld
         val mask = held.fold(0L) { value, button -> value or button.mask }
-        RPCS3.instance.arcadeInput(mask, aimX, aimY, aimY, 128, 128, 128, 128,
+        val vitalSensor = if (profileName == "DarkEscape4D") 60 else 128
+        RPCS3.instance.arcadeInput(mask, aimX, aimY, 128, 128, vitalSensor, vitalSensor, 128,
             held.any { it.special == "coin" },
             held.any { it.special == "test" },
             held.any { it.special == "card" })

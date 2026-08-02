@@ -4,6 +4,7 @@
 #include "util/logs.hpp"
 
 #include <adrenotools/driver.h>
+#include <cstdlib>
 #include <dlfcn.h>
 #include <mutex>
 #include <utility>
@@ -22,6 +23,10 @@ namespace vk
 
 		bool try_initialize_turnip()
 		{
+			// One UI needs Turnip to propagate its UBWC usage hint to gralloc so
+			// SurfaceFlinger interprets swapchain image layouts correctly.
+			setenv("FD_DEV_FEATURES", "enable_tp_ubwc_flag_hint=1", 1);
+
 			std::string hook_library_dir;
 			std::string custom_driver_dir;
 			std::string temporary_dir;
