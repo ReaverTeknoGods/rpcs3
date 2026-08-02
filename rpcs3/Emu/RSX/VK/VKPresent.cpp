@@ -36,6 +36,22 @@ namespace
 
 bool VKGSRender::reinitialize_swapchain()
 {
+#ifdef ANDROID
+	if (surface_lost)
+	{
+		surface_lost = false;
+		vkDeviceWaitIdle(*m_device);
+
+		if (Emu.IsStopped())
+		{
+			return false;
+		}
+
+		auto handle = m_frame->handle();
+		m_swapchain->create(handle);
+	}
+#endif
+
 	m_swapchain_dims.width = m_frame->client_width();
 	m_swapchain_dims.height = m_frame->client_height();
 
@@ -98,6 +114,9 @@ bool VKGSRender::reinitialize_swapchain()
 	{
 		rsx_log.warning("Swapchain initialization failed. Request ignored [%dx%d]", m_swapchain_dims.width, m_swapchain_dims.height);
 		swapchain_unavailable = true;
+#ifdef ANDROID
+		surface_lost = true;
+#endif
 		return false;
 	}
 
@@ -161,6 +180,12 @@ void VKGSRender::present(vk::frame_context_t *ctx)
 		case VK_ERROR_OUT_OF_DATE_KHR:
 			swapchain_unavailable = true;
 			break;
+#ifdef ANDROID
+		case VK_ERROR_SURFACE_LOST_KHR:
+			surface_lost = true;
+			swapchain_unavailable = true;
+			break;
+#endif
 		default:
 			// Other errors not part of rpcs3. This can be caused by 3rd party injectors with bad code, of which we have no control over.
 			// Let the application attempt to recover instead of crashing outright.
@@ -585,7 +610,13 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 	ensure(m_current_frame->present_image == umax);
 	ensure(m_current_frame->swap_command_buffer == nullptr);
 
-	u64 timeout = m_swapchain->get_swap_image_count() <= 2? 0ull: 100000000ull;
+	u64 timeout = m_swapchain->get_swap_image_count() <= 2 ? 0ull :
+#ifdef ANDROID
+		1000ull
+#else
+		100000000ull
+#endif
+	;
 	while (VkResult status = m_swapchain->acquire_next_swapchain_image(m_current_frame->acquire_signal_semaphore, timeout, &m_current_frame->present_image))
 	{
 		switch (status)
@@ -614,6 +645,13 @@ void VKGSRender::flip(const rsx::display_flip_info_t& info)
 			reinitialize_swapchain();
 			ensure(m_current_frame, "Could not reinitialize swapchain after VK_ERROR_OUT_OF_DATE_KHR signal!");
 			continue;
+#ifdef ANDROID
+		case VK_ERROR_SURFACE_LOST_KHR:
+			surface_lost = true;
+			swapchain_unavailable = true;
+			reinitialize_swapchain();
+			return;
+#endif
 		default:
 			vk::die_with_error(status);
 		}

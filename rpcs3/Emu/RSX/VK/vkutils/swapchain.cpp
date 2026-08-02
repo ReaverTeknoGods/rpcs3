@@ -133,6 +133,29 @@ namespace vk
 		}
 	}
 
+	void swapchain_WSI::create(display_handle_t& handle)
+	{
+#ifdef ANDROID
+		if (!dev)
+		{
+			return;
+		}
+
+		if (m_vk_swapchain)
+		{
+			_vkDestroySwapchainKHR(dev, m_vk_swapchain, nullptr);
+			m_vk_swapchain = nullptr;
+		}
+
+		swapchain_images.clear();
+
+		WSI_config config{};
+		m_surface = make_WSI_surface(dev.gpu(), handle, &config);
+#else
+		static_cast<void>(handle);
+#endif
+	}
+
 	void swapchain_WSI::destroy(bool)
 	{
 		if (VkDevice pdev = dev)
@@ -187,7 +210,15 @@ namespace vk
 		}
 #endif
 		VkSurfaceCapabilitiesKHR surface_descriptors = {};
-		CHECK_RESULT(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev.gpu(), m_surface, &surface_descriptors));
+		const auto result = vkGetPhysicalDeviceSurfaceCapabilitiesKHR(dev.gpu(), m_surface, &surface_descriptors);
+#ifdef ANDROID
+		if (result != VK_ERROR_SURFACE_LOST_KHR)
+		{
+			CHECK_RESULT(result);
+		}
+#else
+		CHECK_RESULT(result);
+#endif
 		return { surface_descriptors, false };
 	}
 

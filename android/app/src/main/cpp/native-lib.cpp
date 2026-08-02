@@ -1954,11 +1954,16 @@ extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcs3_RPCS3_surfaceEvent(
       ANativeWindow_release(prevWindow);
     }
 
-    if (auto padThread = pad::get_pad_thread()) {
-      padThread->open_home_menu();
-    }
+    // A finishing activity can destroy its SurfaceView after the emulator has
+    // already torn down the pad thread. Treat that as normal shutdown instead
+    // of verifying a pad object that no longer exists.
+    if (!Emu.IsStopped()) {
+      if (auto padThread = pad::get_pad_thread(true)) {
+        padThread->open_home_menu();
+      }
 
-    Emu.Pause();
+      Emu.Pause();
+    }
   } else {
     auto newWindow = ANativeWindow_fromSurface(env, surface);
 

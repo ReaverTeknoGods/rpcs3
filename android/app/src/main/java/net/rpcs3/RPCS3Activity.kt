@@ -163,6 +163,14 @@ class RPCS3Activity : Activity() {
         bootThread?.join()
         if (::arcadeOverlay.isInitialized) arcadeOverlay.configure("")
         super.onDestroy()
+
+        // Match the PCSX2X6 companion lifecycle: once TPUI has received the
+        // terminal session callback and this Activity is genuinely finishing,
+        // do not retain RPCS3's large native runtime as an empty cached process.
+        // Configuration-driven recreation never sets stopping and must survive.
+        if (companionSession && stopping) {
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }
     }
 
     @Deprecated("Deprecated in Android")
