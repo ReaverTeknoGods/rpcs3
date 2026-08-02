@@ -48,6 +48,16 @@ bool VKGSRender::reinitialize_swapchain()
 		}
 
 		auto handle = m_frame->handle();
+
+		// handle() waits for Android to publish a replacement ANativeWindow.
+		// A stop can complete while it is waiting, in which case it returns the
+		// previous window only to let the renderer unwind. Never recreate a
+		// Vulkan surface against that shutdown-only handle.
+		if (Emu.IsStopped())
+		{
+			return false;
+		}
+
 		m_swapchain->create(handle);
 	}
 #endif

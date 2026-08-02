@@ -2,6 +2,7 @@ package net.rpcs3
 
 import android.app.Activity
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -9,6 +10,8 @@ import android.view.MotionEvent
 import android.view.ViewGroup
 import android.view.ViewGroup.MarginLayoutParams
 import android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+import androidx.constraintlayout.widget.ConstraintLayout
+import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -37,6 +40,7 @@ class RPCS3Activity : Activity() {
     private var arcadeVfsConfigPath: String? = null
     @Volatile private var bootSucceeded = false
     @Volatile private var stopping = false
+    @Volatile private var terminalStopComplete = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,6 +83,7 @@ class RPCS3Activity : Activity() {
 
         if (companionSession) {
             binding.padOverlay.isInvisible = true
+            positionCompanionOverlayToggle()
             val profileName = intent.getStringExtra(TeknoParrotContract.EXTRA_PROFILE_NAME).orEmpty()
             arcadeOverlay.configure(profileName)
             val arcadeRoot = File(gamePath).parentFile?.parentFile?.parentFile
@@ -168,7 +173,7 @@ class RPCS3Activity : Activity() {
         // terminal session callback and this Activity is genuinely finishing,
         // do not retain RPCS3's large native runtime as an empty cached process.
         // Configuration-driven recreation never sets stopping and must survive.
-        if (companionSession && stopping) {
+        if (companionSession && stopping && terminalStopComplete) {
             android.os.Process.killProcess(android.os.Process.myPid())
         }
     }
@@ -183,11 +188,17 @@ class RPCS3Activity : Activity() {
         stopping = true
         if (companionSession) TeknoParrotSession.update(applicationContext, "stopping")
         thread(name = "RPCS3X6 game stop") {
-            if (RPCS3.initialized && RPCS3.getState() != EmulatorState.Stopped) {
-                RPCS3.instance.kill()
-            }
+            terminalStopComplete = stopEmulatorAndWait()
             if (companionSession) TeknoParrotSession.update(applicationContext, "stopped")
-            runOnUiThread { finish() }
+            if (terminalStopComplete) {
+                // The stopped callback is asynchronous; let Android dispatch
+                // it to TPUI before terminal onDestroy kills this process.
+                Thread.sleep(250)
+                runOnUiThread { finish() }
+            } else {
+                Log.e("RPCS3X6 lifecycle", "Native stop timed out; terminating the companion process")
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
         }
     }
 
@@ -353,6 +364,19 @@ class RPCS3Activity : Activity() {
         )
     }
 
+    /** Keep the show/hide affordance clear of every profile's bottom-right action. */
+    private fun positionCompanionOverlayToggle() {
+        val margin = (10 * resources.displayMetrics.density).toInt()
+        binding.oscToggle.updateLayoutParams<ConstraintLayout.LayoutParams> {
+            endToEnd = ConstraintSet.UNSET
+            bottomToBottom = ConstraintSet.UNSET
+            startToStart = ConstraintSet.PARENT_ID
+            topToTop = ConstraintSet.PARENT_ID
+            marginStart = margin
+            topMargin = margin
+        }
+    }
+
     private fun enableFullScreenImmersive() {
         with(window) {
             WindowCompat.setDecorFitsSystemWindows(this, false)
@@ -391,9 +415,39 @@ class RPCS3Activity : Activity() {
         private const val LEGACY_GAME_PATH_EXTRA = "path"
         private var activeActivity = WeakReference<RPCS3Activity>(null)
 
-        fun finishActiveSession() {
-            val activity = activeActivity.get() ?: return
-            activity.runOnUiThread { activity.finish() }
+        fun hasActiveActivity(): Boolean = activeActivity.get() != null
+
+        fun finishActiveSession(cleanStopComplete: Boolean) {
+            val activity = activeActivity.get()
+            if (activity == null) {
+                if (cleanStopComplete) android.os.Process.killProcess(android.os.Process.myPid())
+                return
+            }
+            activity.runOnUiThread {
+                // Remote TPUI stops arrive through the control receiver rather
+                // than onBackPressed(), so mark this as a terminal companion
+                // shutdown before onDestroy decides whether to retain the
+                // native runtime.
+                activity.stopping = true
+                activity.terminalStopComplete = cleanStopComplete
+                activity.finish()
+            }
+        }
+
+        fun stopEmulatorAndWait(timeoutMs: Long = 30_000L): Boolean {
+            if (!RPCS3.initialized) return true
+            if (runCatching { RPCS3.getState() }.getOrDefault(EmulatorState.Stopped) != EmulatorState.Stopped) {
+                RPCS3.instance.kill()
+            }
+
+            val deadline = SystemClock.elapsedRealtime() + timeoutMs
+            while (SystemClock.elapsedRealtime() < deadline) {
+                if (runCatching { RPCS3.getState() }.getOrDefault(EmulatorState.Stopped) == EmulatorState.Stopped) {
+                    return true
+                }
+                Thread.sleep(50)
+            }
+            return runCatching { RPCS3.getState() }.getOrDefault(EmulatorState.Stopped) == EmulatorState.Stopped
         }
     }
 }

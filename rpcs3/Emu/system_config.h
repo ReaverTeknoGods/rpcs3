@@ -2,6 +2,7 @@
 
 #include "system_config_types.h"
 #include "Utilities/Config.h"
+#include "Utilities/Thread.h"
 
 enum CellNetCtlState : s32;
 enum CellSysutilLicenseArea : s32;
@@ -42,6 +43,24 @@ struct cfg_root : cfg::node
 		cfg::_bool accurate_cache_line_stores{ this, "Accurate Cache Line Stores", false };
 		cfg::_bool rsx_accurate_res_access{this, "Accurate RSX reservation access", false, true};
 		cfg::_bool ppu_reservation_priority_over_spu{this, "PPU Reservation Priority Over SPUs", false, true};
+
+#ifdef ANDROID
+		// The legacy RPCS3 Android port exposed a per-core class map. Keep the
+		// default unrestricted, then let the Android frontend opt known SoCs into
+		// a measured layout without changing desktop configuration files.
+		struct node_affinity : cfg::node
+		{
+			node_affinity(cfg::node* _this) : cfg::node(_this, "Affinity") {}
+			cfg::_enum<thread_affinity_class> cpu0{this, "CPU0", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu1{this, "CPU1", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu2{this, "CPU2", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu3{this, "CPU3", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu4{this, "CPU4", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu5{this, "CPU5", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu6{this, "CPU6", thread_affinity_class::general, true};
+			cfg::_enum<thread_affinity_class> cpu7{this, "CPU7", thread_affinity_class::general, true};
+		} affinity{this};
+#endif
 
 		struct fifo_setting : public cfg::_enum<rsx_fifo_mode>
 		{

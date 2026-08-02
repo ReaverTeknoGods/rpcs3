@@ -24,6 +24,19 @@ enum class thread_class : u32
 	rsx = 0x55,
 };
 
+#ifdef ANDROID
+// Keep the configurable affinity values contiguous. thread_class::rsx is a
+// deliberately sparse internal sentinel (0x55), which cfg::_enum cannot expose
+// because its variant discovery stops at the first unknown numeric value.
+enum class thread_affinity_class : u32
+{
+	general = 0,
+	ppu,
+	spu,
+	rsx,
+};
+#endif
+
 enum class thread_state : u32
 {
 	created = 0,  // Initial state

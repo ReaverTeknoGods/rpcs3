@@ -18,29 +18,71 @@ class TeknoParrotSessionControlReceiver : BroadcastReceiver() {
         ) ?: return
 
         when (request.action) {
-            TeknoParrotContract.ACTION_QUERY_SESSION -> TeknoParrotSession.query(context, token)
+            TeknoParrotContract.ACTION_QUERY_SESSION -> querySession(context, token)
             TeknoParrotContract.ACTION_STOP_GAME -> stopGame(context, token)
-            TeknoParrotContract.ACTION_QUERY_CATALOG -> sendCatalog(context, token)
-            TeknoParrotContract.ACTION_QUERY_FIRMWARE -> sendFirmwareStatus(context, token)
+            TeknoParrotContract.ACTION_QUERY_CATALOG -> {
+                sendCatalog(context, token)
+                scheduleIdleReceiverCleanup()
+            }
+            TeknoParrotContract.ACTION_QUERY_FIRMWARE -> {
+                sendFirmwareStatus(context, token)
+                scheduleIdleReceiverCleanup()
+            }
+        }
+    }
+
+    private fun querySession(context: Context, token: String) {
+        val ownsSession = TeknoParrotSession.owns(token)
+        TeknoParrotSession.query(context, token)
+
+        // Android may start a fresh application process solely to deliver a
+        // final health query after the terminal session process has exited.
+        // Let the stopped callback reach TPUI, then discard that idle bridge
+        // process instead of retaining RPCS3's native libraries in RAM.
+        if (!ownsSession && !RPCS3Activity.hasActiveActivity()) {
+            scheduleIdleReceiverCleanup()
+        }
+    }
+
+    private fun scheduleIdleReceiverCleanup() {
+        if (RPCS3Activity.hasActiveActivity()) return
+        val pending = goAsync()
+        thread(name = "RPCS3X6 idle receiver cleanup") {
+            // Release the incoming broadcast queue first. The response sent
+            // above is asynchronous and can otherwise remain queued behind
+            // this PendingResult until the process is terminated.
+            pending.finish()
+            Thread.sleep(500)
+            // TPUI can launch RPCS3Activity into this same process as soon as
+            // it receives a successful preflight reply. Re-evaluate idleness
+            // at exit time so that transition is never mistaken for a cached
+            // receiver-only process.
+            if (!RPCS3Activity.hasActiveActivity()) {
+                android.os.Process.killProcess(android.os.Process.myPid())
+            }
         }
     }
 
     private fun stopGame(context: Context, token: String) {
         if (!TeknoParrotSession.owns(token)) {
-            TeknoParrotSession.query(context, token)
+            querySession(context, token)
             return
         }
 
         val pending = goAsync()
         thread(name = "RPCS3X6 TPUI stop") {
+            var cleanStopComplete = false
             runCatching {
-                if (RPCS3.initialized && RPCS3.getState() != EmulatorState.Stopped) {
-                    RPCS3.instance.kill()
-                }
-                RPCS3Activity.finishActiveSession()
+                cleanStopComplete = RPCS3Activity.stopEmulatorAndWait()
                 TeknoParrotSession.update(context, "stopped")
             }
+            // Complete the broadcast before finishing the Activity. Its
+            // terminal onDestroy intentionally kills this process, and doing
+            // that with an outstanding PendingResult makes Android redeliver
+            // STOP_GAME into a fresh cached process.
             pending.finish()
+            Thread.sleep(250)
+            RPCS3Activity.finishActiveSession(cleanStopComplete)
         }
     }
 

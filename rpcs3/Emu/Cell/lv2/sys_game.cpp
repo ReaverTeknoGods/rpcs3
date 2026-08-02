@@ -172,6 +172,18 @@ error_code _sys_game_watchdog_start(u32 timeout)
 {
 	sys_game.trace("sys_game_watchdog_start(timeout=%d)", timeout);
 
+#ifdef ANDROID
+	// Deadstorm Pirates Special starts its watchdog while Android is still
+	// compiling large first-run SPU blocks. Its desktop-sized timeout can fire
+	// during valid compilation and deadlock the restart while LLVM unwinds.
+	// Keep the workaround profile-local: titles such as Tekken Tag Tournament 2
+	// deliberately use the watchdog to reboot after arcade-board initialization.
+	if (Emu.GetBoot().find("/DSPS/") != umax)
+	{
+		timeout = std::max<u32>(timeout, 600);
+	}
+#endif
+
 	// According to disassembly
 	timeout *= 1'000'000;
 	timeout &= -64;

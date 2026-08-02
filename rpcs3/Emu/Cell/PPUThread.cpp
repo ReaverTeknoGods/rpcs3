@@ -5380,6 +5380,12 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		
 		thread_ctrl::set_name(old_name);
 		g_watchdog_hold_ctr--;
+
+		// The parsed PPU modules are no longer needed after compilation. Release
+		// them before loading every generated object into MCJIT so both large
+		// working sets do not overlap. This transient overlap can exhaust the
+		// Android process address space on arcade titles with many modules.
+		decltype(workload){}.swap(workload);
 	}
 
 	// Initialize compiler instance
@@ -5408,7 +5414,7 @@ bool ppu_initialize(const ppu_module<lv2_obj>& info, bool check_only, u64 file_s
 		*progress_dialog = get_localized_string(localized_string_id::PROGRESS_DIALOG_LINKING_PPU_MODULES);
 
 		// Because linking is faster than compiling, consider each module linkages as a single module compilation in time
-		const bool divide_by_twenty = !workload.empty();
+		const bool divide_by_twenty = compiled_new;
 		const usz increment_link_count_at = (divide_by_twenty ? 20 : 1);
 
 		g_progr_ptotal += static_cast<u32>(utils::aligned_div<u64>(link_workload.size(), increment_link_count_at));
