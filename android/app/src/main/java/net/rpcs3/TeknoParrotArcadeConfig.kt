@@ -42,6 +42,15 @@ object TeknoParrotArcadeConfig {
         userDirectory.mkdirs()
         val localUsername = File(userDirectory, "localusername")
         if (!localUsername.isFile) localUsername.writeText("User")
+
+        // Mirror the RPCS3Config entries used by the desktop TeknoParrot
+        // profiles. Reset title-specific values on every launch because all
+        // arcade games intentionally share the SCEEXE000 title id.
+        check(RPCS3.instance.settingsSet("Core@@PPU Threads", "2"))
+        check(RPCS3.instance.settingsSet(
+            "Video@@Write Color Buffers",
+            (profileName == "DSPS" || profileName == "RazingStorm").toString()
+        ))
         target
     }.getOrNull()
 

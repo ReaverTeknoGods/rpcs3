@@ -21,6 +21,7 @@
 #include "Emu/RSX/Overlays/overlay_save_dialog.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/VK/VKGSRender.h"
+#include "Emu/VFS.h"
 #include "Emu/localized_string_id.h"
 #include "Emu/system_config.h"
 #include "Emu/system_config_types.h"
@@ -51,6 +52,7 @@
 #include "util/logs.hpp"
 #include "util/serialization.hpp"
 #include "util/sysinfo.hpp"
+#include "util/video_source.h"
 #include <Emu/Cell/Modules/cellSaveData.h>
 #include <Emu/Cell/Modules/sceNpTrophy.h>
 #include <Emu/Io/pad_config.h>
@@ -201,6 +203,26 @@ struct GraphicsFrame : GSFrameBase {
                        u32 sshot_height, bool is_bgra) override {}
 
   void update_title(double fps = 0.0) override {}
+};
+
+struct AndroidNullVideoSource final : video_source {
+  void set_video_path(const std::string &) override {}
+  void set_audio_path(const std::string &) override {}
+  void set_active(bool active) override { m_active = active; }
+  bool get_active() const override { return m_active; }
+  bool has_new() const override { return false; }
+
+  void get_image(std::vector<u8> &data, int &width, int &height, int &channels,
+                 int &bitsPerPixel) override {
+    data.clear();
+    width = 0;
+    height = 0;
+    channels = 0;
+    bitsPerPixel = 0;
+  }
+
+private:
+  bool m_active = false;
 };
 
 void jit_announce(uptr, usz, std::string_view);
@@ -1423,6 +1445,12 @@ static void setupCallbacks() {
       .on_save_state_progress = [](auto...) {},
       .enable_disc_eject = [](auto...) {},
       .enable_disc_insert = [](auto...) {},
+      .try_to_quit = [](bool, std::function<void()> on_exit) {
+        if (on_exit) {
+          on_exit();
+        }
+        return true;
+      },
       .handle_taskbar_progress = [](auto...) {},
       .init_kb_handler =
           [](auto...) {
@@ -1511,6 +1539,12 @@ static void setupCallbacks() {
         return U"";
       },
       .get_localized_setting = [](auto...) { return ""; },
+      .get_photo_path = [](std::string_view title) {
+        const std::string photo_dir =
+            rpcs3::utils::get_hdd0_dir() + "photo/";
+        fs::create_path(photo_dir);
+        return photo_dir + vfs::escape(title, true);
+      },
       .play_sound = [](auto...) {},
       .get_image_info = [](auto...) { return false; },
       .get_scaled_image = [](auto...) { return false; },
@@ -1539,6 +1573,11 @@ static void setupCallbacks() {
       .display_sleep_control_supported = [](auto...) { return false; },
       .enable_display_sleep = [](auto...) {},
       .check_microphone_permissions = [](auto...) {},
+      .make_video_source = [] {
+        return std::make_unique<AndroidNullVideoSource>();
+      },
+      .enable_gamemode = [](auto...) {},
+      .get_database_config = [](const std::string &) { return std::string(); },
   });
 }
 
@@ -1811,6 +1850,8 @@ Java_net_rpcs3_RPCS3_initialize(JNIEnv *env, jobject, jstring rootDir) {
 
   android_pad_handler::set_on_connect_cb(initVirtualPad);
   setupCallbacks();
+  Emu.SetSupportedRenderers(
+      {video_renderer::null, video_renderer::vulkan});
   Emu.SetHasGui(false);
   Emu.Init();
 
