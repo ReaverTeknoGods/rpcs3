@@ -2,6 +2,9 @@ name: RPCS3X6 Android
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - "rpcs3x6-v*"
   pull_request:
     paths:
       - "android/**"
