@@ -21,6 +21,7 @@
 #include "Emu/RSX/Overlays/overlay_save_dialog.h"
 #include "Emu/RSX/RSXThread.h"
 #include "Emu/RSX/VK/VKGSRender.h"
+#include "Emu/RSX/VK/VulkanAPI.h"
 #include "Emu/VFS.h"
 #include "Emu/localized_string_id.h"
 #include "Emu/system_config.h"
@@ -1863,6 +1864,16 @@ Java_net_rpcs3_RPCS3_initialize(JNIEnv *env, jobject, jstring rootDir) {
 
   Emulator::SaveSettings(g_cfg.to_string(), Emu.GetTitleID());
   return true;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_rpcs3_RPCS3_configureVulkanDriver(JNIEnv *env, jobject,
+                                            jstring hookLibraryDir,
+                                            jstring customDriverDir,
+                                            jstring temporaryDir) {
+  return vk::configure_android_vulkan(
+      unwrap(env, hookLibraryDir), unwrap(env, customDriverDir),
+      unwrap(env, temporaryDir));
 }
 
 extern "C" JNIEXPORT jboolean JNICALL

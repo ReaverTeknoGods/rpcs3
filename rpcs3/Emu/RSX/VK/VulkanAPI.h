@@ -39,6 +39,7 @@
 #undef VK_USE_PLATFORM_WAYLAND_KHR
 
 #include <util/types.hpp>
+#include <string>
 
 #if VK_HEADER_VERSION < 287
 constexpr VkDriverId VK_DRIVER_ID_MESA_HONEYKRISP = static_cast<VkDriverId>(26);
@@ -64,6 +65,7 @@ namespace vk
 {
 	void init();
 #ifdef ANDROID
+	bool configure_android_vulkan(std::string hook_library_dir, std::string custom_driver_dir, std::string temporary_dir);
 	bool initialize_android_vulkan();
 #endif
 }

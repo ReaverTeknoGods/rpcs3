@@ -3,106 +3,91 @@
 
 #include "util/logs.hpp"
 
-#include <cstddef>
-#include <cstring>
+#include <adrenotools/driver.h>
 #include <dlfcn.h>
 #include <mutex>
+#include <utility>
 
 namespace vk
 {
 	namespace
 	{
-		struct hw_module_t;
-		struct hw_device_t;
-
-		struct hw_module_methods_t
-		{
-			int (*open)(const hw_module_t*, const char*, hw_device_t**);
-		};
-
-		struct hw_device_t
-		{
-			u32 tag;
-			u32 version;
-			hw_module_t* module;
-			u64 reserved[12];
-			int (*close)(hw_device_t*);
-		};
-
-		struct hw_module_t
-		{
-			u32 tag;
-			u16 module_api_version;
-			u16 hal_api_version;
-			const char* id;
-			const char* name;
-			const char* author;
-			hw_module_methods_t* methods;
-			void* dso;
-			u64 reserved[25];
-		};
-
-		struct hwvulkan_device_t
-		{
-			hw_device_t common;
-			PFN_vkEnumerateInstanceExtensionProperties enumerate_instance_extensions;
-			PFN_vkCreateInstance create_instance;
-			PFN_vkGetInstanceProcAddr get_instance_proc_addr;
-		};
-
-		static_assert(sizeof(hw_module_t) == 248);
-		static_assert(sizeof(hw_device_t) == 120);
-		static_assert(offsetof(hwvulkan_device_t, get_instance_proc_addr) == 136);
-
+		std::mutex s_vulkan_config_mutex;
 		std::once_flag s_vulkan_once;
 		bool s_vulkan_initialized = false;
-		void* s_turnip_library = nullptr;
-		hwvulkan_device_t* s_turnip_device = nullptr;
+		void* s_vulkan_library = nullptr;
+		std::string s_hook_library_dir;
+		std::string s_custom_driver_dir;
+		std::string s_temporary_dir;
 
 		bool try_initialize_turnip()
 		{
-			void* library = dlopen("libvulkan_freedreno.so", RTLD_LOCAL | RTLD_NOW);
+			std::string hook_library_dir;
+			std::string custom_driver_dir;
+			std::string temporary_dir;
+			{
+				std::lock_guard lock(s_vulkan_config_mutex);
+				hook_library_dir = s_hook_library_dir;
+				custom_driver_dir = s_custom_driver_dir;
+				temporary_dir = s_temporary_dir;
+			}
+
+			if (hook_library_dir.empty() || custom_driver_dir.empty() || temporary_dir.empty())
+			{
+				rsx_log.warning("Mesa Turnip paths were not configured before Vulkan initialization");
+				return false;
+			}
+
+			void* library = adrenotools_open_libvulkan(
+				RTLD_NOW | RTLD_LOCAL, ADRENOTOOLS_DRIVER_CUSTOM,
+				temporary_dir.c_str(), hook_library_dir.c_str(),
+				custom_driver_dir.c_str(), "libvulkan_freedreno.so", nullptr, nullptr);
 			if (!library)
 			{
-				rsx_log.warning("Mesa Turnip is unavailable: %s", dlerror());
+				rsx_log.warning("libadrenotools could not load Mesa Turnip: %s", dlerror());
 				return false;
 			}
 
-			auto* module = static_cast<hw_module_t*>(dlsym(library, "HMI"));
-			if (!module || !module->id || std::strcmp(module->id, "vulkan") ||
-				!module->methods || !module->methods->open)
+			auto get_instance_proc_addr = reinterpret_cast<PFN_vkGetInstanceProcAddr>(
+				dlsym(library, "vkGetInstanceProcAddr"));
+			if (!get_instance_proc_addr)
 			{
-				rsx_log.error("Mesa Turnip does not expose a valid Android Vulkan HAL module");
+				rsx_log.error("The libadrenotools Vulkan loader has no vkGetInstanceProcAddr entry point");
 				dlclose(library);
 				return false;
 			}
 
-			hwvulkan_device_t* device = nullptr;
-			if (module->methods->open(module, "vk0", reinterpret_cast<hw_device_t**>(&device)) ||
-				!device || !device->get_instance_proc_addr)
-			{
-				rsx_log.error("Mesa Turnip failed to open its Android Vulkan HAL device");
-				dlclose(library);
-				return false;
-			}
-
-			volkInitializeCustom(device->get_instance_proc_addr);
+			volkInitializeCustom(get_instance_proc_addr);
 			if (!vkCreateInstance || !vkEnumerateInstanceExtensionProperties)
 			{
 				rsx_log.error("Mesa Turnip did not provide the required Vulkan entry points");
-				if (device->common.close)
-				{
-					device->common.close(&device->common);
-				}
 				dlclose(library);
 				return false;
 			}
 
-			s_turnip_library = library;
-			s_turnip_device = device;
-			rsx_log.notice("Using packaged Mesa Turnip Vulkan driver");
+			s_vulkan_library = library;
+			rsx_log.notice("Using libadrenotools Vulkan loader for packaged Mesa Turnip");
 			return true;
 		}
+	}
+
+	bool configure_android_vulkan(std::string hook_library_dir, std::string custom_driver_dir, std::string temporary_dir)
+	{
+		if (hook_library_dir.empty() || custom_driver_dir.empty() || temporary_dir.empty())
+		{
+			return false;
+		}
+
+		std::lock_guard lock(s_vulkan_config_mutex);
+		if (s_vulkan_initialized)
+		{
+			return false;
+		}
+
+		s_hook_library_dir = std::move(hook_library_dir);
+		s_custom_driver_dir = std::move(custom_driver_dir);
+		s_temporary_dir = std::move(temporary_dir);
+		return true;
 	}
 
 	bool initialize_android_vulkan()

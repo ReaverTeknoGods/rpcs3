@@ -1,6 +1,7 @@
 package net.rpcs3
 
 import android.content.Context
+import java.io.File
 import kotlin.concurrent.thread
 
 /** Process-wide native runtime initialization shared by setup and game activities. */
@@ -15,6 +16,19 @@ object RPCS3Runtime {
         if (!TeknoParrotArcadeConfig.installGlobalAssets(context.applicationContext)) return false
 
         if (!RPCS3.instance.initialize(RPCS3.rootDirectory)) return false
+
+        val nativeLibraryDir =
+            context.packageManager.getApplicationInfo(context.packageName, 0).nativeLibraryDir
+        val customDriverDir = prepareTurnipDriver(context.applicationContext, nativeLibraryDir)
+            ?: return false
+        val temporaryDir = File(context.applicationContext.cacheDir, "adrenotools")
+        if (!temporaryDir.isDirectory && !temporaryDir.mkdirs()) return false
+        if (!RPCS3.instance.configureVulkanDriver(
+                nativeLibraryDir,
+                customDriverDir.absolutePath.trimEnd('/') + "/",
+                temporaryDir.absolutePath
+            )
+        ) return false
 
         // A fresh Android configuration currently defaults to the null
         // renderer. The TeknoParrot companion is always an interactive game
@@ -39,12 +53,6 @@ object RPCS3Runtime {
         // Android shader compilation serialized.
         if (!RPCS3.instance.settingsSet("Video@@Shader Compiler Threads", "0")) return false
 
-        val nativeLibraryDir =
-            context.packageManager.getApplicationInfo(context.packageName, 0).nativeLibraryDir
-        RPCS3.instance.settingsSet(
-            "Video@@Vulkan@@Custom Driver@@Hook Directory",
-            "\"$nativeLibraryDir\""
-        )
         RPCS3.initialized = true
 
         thread(name = "RPCS3X6 main processor") {
@@ -55,4 +63,26 @@ object RPCS3Runtime {
         }
         return true
     }
+
+    private fun prepareTurnipDriver(context: Context, nativeLibraryDir: String): File? =
+        runCatching {
+            val source = File(nativeLibraryDir, TURNIP_LIBRARY_NAME)
+            check(source.isFile) { "The packaged Turnip library is missing" }
+
+            val directory = File(context.filesDir, "vulkan-driver")
+            check(directory.isDirectory || directory.mkdirs()) {
+                "Could not create the private Vulkan driver directory"
+            }
+
+            val target = File(directory, TURNIP_LIBRARY_NAME)
+            val temporary = File(directory, "$TURNIP_LIBRARY_NAME.installing")
+            source.inputStream().use { input ->
+                temporary.outputStream().use { output -> input.copyTo(output) }
+            }
+            check(!target.exists() || target.delete()) { "Could not replace the previous Turnip library" }
+            check(temporary.renameTo(target)) { "Could not install the packaged Turnip library" }
+            target
+        }.getOrNull()
+
+    private const val TURNIP_LIBRARY_NAME = "libvulkan_freedreno.so"
 }

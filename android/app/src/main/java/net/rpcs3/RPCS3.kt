@@ -82,6 +82,7 @@ class RPCS3 {
     external fun overlayPadData(digital1: Int, digital2: Int, leftStickX: Int, leftStickY: Int, rightStickX: Int, rightStickY: Int): Boolean
     external fun arcadeInput(control: Long, analog0: Int, analog1: Int, analog2: Int, analog3: Int, analog4: Int, analog5: Int, analog6: Int, coin: Boolean, test: Boolean, card: Boolean)
     external fun configureArcadeRoot(rootPath: String, vfsConfigPath: String): Boolean
+    external fun configureVulkanDriver(hookLibraryDir: String, customDriverDir: String, temporaryDir: String): Boolean
     external fun collectGameInfo(rootDir: String, progressId: Long): Boolean
     external fun systemInfo(): String
     external fun settingsGet(path: String): String

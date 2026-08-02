@@ -24,6 +24,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(volk)
 
+FetchContent_Declare(
+    adrenotools
+    GIT_REPOSITORY https://github.com/bylaws/libadrenotools.git
+    GIT_TAG 8fae8ce254dfc1344527e05301e43f37dea2df80
+    GIT_SUBMODULES lib/linkernsbypass
+    GIT_SUBMODULES_RECURSE TRUE
+)
+FetchContent_MakeAvailable(adrenotools)
+
 set(TURNIP_ARCHIVE "${CMAKE_BINARY_DIR}/mesa-turnip-android-${TURNIP_VERSION}.zip")
 set(TURNIP_PATH "${CMAKE_BINARY_DIR}/mesa-turnip-android-${TURNIP_VERSION}")
 set(TURNIP_LIBRARY "${TURNIP_PATH}/libvulkan_freedreno.so")
@@ -210,13 +219,33 @@ target_link_libraries(${CMAKE_PROJECT_NAME}
     3rdparty::libcurl
     3rdparty::zlib
     3rdparty::fusion
+    adrenotools
 )
 
 # Gradle packages native libraries from the CMake target output directory.
-# Keep Turnip beside the frontend library so it can be loaded through the app's
-# isolated linker namespace without changing or rooting the device.
+# Keep Turnip and libadrenotools' runtime hooks beside the frontend library.
+# The app copies Turnip into its private data directory before asking
+# libadrenotools to load it through Android's real Vulkan loader.
+add_dependencies(${CMAKE_PROJECT_NAME}
+    main_hook
+    hook_impl
+    file_redirect_hook
+    gsl_alloc_hook
+)
 add_custom_command(TARGET ${CMAKE_PROJECT_NAME} POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${TURNIP_LIBRARY}"
         "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/libvulkan_freedreno.so"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:main_hook>"
+        "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_NAME:main_hook>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:hook_impl>"
+        "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_NAME:hook_impl>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:file_redirect_hook>"
+        "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_NAME:file_redirect_hook>"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "$<TARGET_FILE:gsl_alloc_hook>"
+        "$<TARGET_FILE_DIR:${CMAKE_PROJECT_NAME}>/$<TARGET_FILE_NAME:gsl_alloc_hook>"
 )
