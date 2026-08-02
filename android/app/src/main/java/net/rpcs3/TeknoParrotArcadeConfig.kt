@@ -86,39 +86,21 @@ object TeknoParrotArcadeConfig {
         // an RPCS3 PSID change produces the Namco 19-1 system error. Desktop
         // TeknoParrot recreates the existing file as an empty file on every
         // launch so the game can initialize it against RPCS3's static PSID.
-        val securityFileName = if (profileName == "DSPS" || profileName == "RazingStorm")
-            "s357secr.bin"
-        else
-            "s357security.bin"
+        val securityFileName = securityFileName(profileName)
         val securityFile = File(root, "dev_hdd0/game/SCEEXE000/USRDIR/$securityFileName")
         if (securityFile.isFile) {
             securityFile.outputStream().use { }
             Log.i(TAG, "Reset $securityFileName for $profileName")
         }
 
-        boardStorage[profileName]?.let { identity ->
-            val data = byteArrayOf(0x01, 0xFC.toByte()) + identity + ByteArray(10) { 0xFF.toByte() }
-            check(data.size == 16)
+        boardStorageData(profileName)?.let { data ->
             val boardStorageFile = File(root, "dev_hdd1/caches/board_storage.bin")
             boardStorageFile.parentFile?.mkdirs()
             boardStorageFile.writeBytes(data)
             Log.i(TAG, "Created board_storage.bin for $profileName")
         }
 
-        taikoVersions[profileName]?.let { version ->
-            val data = buildList<Byte> {
-                addAll(listOf(0x00, 0x00, 0x00, 0x16).map(Int::toByte))
-                addAll("serialization::archive".encodeToByteArray().toList())
-                add(0x00)
-                add(version.archiveVersion)
-                addAll(listOf(0x04, 0x04, 0x04, 0x08).map(Int::toByte))
-                addAll(listOf(0x00, 0x00, 0x00, 0x01).map(Int::toByte))
-                addAll(ByteArray(8).toList())
-                add(version.seriesVersion)
-                addAll(listOf(0x00, 0x20).map(Int::toByte))
-                add(version.year)
-                add(0x03)
-            }.toByteArray()
+        taikoVersionData(profileName)?.let { data ->
             listOf("dev_usb000", "dev_usb001").forEach { usbDevice ->
                 val versionFile = File(root, "$usbDevice/VERSIONUP/DATA00000.BIN")
                 versionFile.parentFile?.mkdirs()
@@ -213,6 +195,35 @@ object TeknoParrotArcadeConfig {
         ))
         target
     }.getOrNull()
+
+    internal fun securityFileName(profileName: String): String =
+        if (profileName == "DSPS" || profileName == "RazingStorm")
+            "s357secr.bin"
+        else
+            "s357security.bin"
+
+    internal fun boardStorageData(profileName: String): ByteArray? =
+        boardStorage[profileName]?.let { identity ->
+            (byteArrayOf(0x01, 0xFC.toByte()) + identity +
+                ByteArray(10) { 0xFF.toByte() }).also { check(it.size == 16) }
+        }
+
+    internal fun taikoVersionData(profileName: String): ByteArray? =
+        taikoVersions[profileName]?.let { version ->
+            buildList<Byte> {
+                addAll(listOf(0x00, 0x00, 0x00, 0x16).map(Int::toByte))
+                addAll("serialization::archive".encodeToByteArray().toList())
+                add(0x00)
+                add(version.archiveVersion)
+                addAll(listOf(0x04, 0x04, 0x04, 0x08).map(Int::toByte))
+                addAll(listOf(0x00, 0x00, 0x00, 0x01).map(Int::toByte))
+                addAll(ByteArray(8).toList())
+                add(version.seriesVersion)
+                addAll(listOf(0x00, 0x20).map(Int::toByte))
+                add(version.year)
+                add(0x03)
+            }.toByteArray()
+        }
 
     private fun copyAsset(context: Context, assetPath: String, target: File) {
         target.parentFile?.mkdirs()
