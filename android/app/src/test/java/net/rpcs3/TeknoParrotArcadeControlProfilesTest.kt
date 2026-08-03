@@ -19,7 +19,7 @@ class TeknoParrotArcadeControlProfilesTest {
                 "DOWN" to 0x1000, "ENTER" to 0x200, "SERVICE" to 0x4000
             ),
             "DSPS" to controls(
-                "ALT" to 0x400000, "START" to 0x200000, "UP" to 0x2000,
+                "ALT" to 0x800000, "START" to 0x200000, "UP" to 0x2000,
                 "DOWN" to 0x1000, "ENTER" to 0x200, "SERVICE" to 0x4000
             ),
             "RazingStorm" to controls(
@@ -88,7 +88,7 @@ class TeknoParrotArcadeControlProfilesTest {
         mapOf(
             "DarkEscape4D" to 0x800000L,
             "AKB48" to 0x800000L,
-            "DSPS" to 0x800000L,
+            "DSPS" to 0x400000L,
             "RazingStorm" to 0x200000L
         ).forEach { (profile, trigger) ->
             val layout = TeknoParrotArcadeControlProfiles.forProfile(profile)
@@ -100,12 +100,16 @@ class TeknoParrotArcadeControlProfilesTest {
 
         val deadstorm = TeknoParrotArcadeControlProfiles.forProfile("DSPS")
         assertTrue(deadstorm.rotaryEncoder)
+        assertTrue(deadstorm.mirrorGunAim)
         assertTrue(deadstorm.buttons.any { it.special == "rotary-left" })
         assertTrue(deadstorm.buttons.any { it.special == "rotary-right" })
         TeknoParrotArcadeControlProfiles.layouts
             .filterKeys { it != "DSPS" }
             .values
-            .forEach { assertFalse(it.rotaryEncoder) }
+            .forEach {
+                assertFalse(it.rotaryEncoder)
+                assertFalse(it.mirrorGunAim)
+            }
 
         assertTrue(TeknoParrotArcadeControlProfiles.forProfile("ttt2")
             .buttons.any { it.special == "card" })

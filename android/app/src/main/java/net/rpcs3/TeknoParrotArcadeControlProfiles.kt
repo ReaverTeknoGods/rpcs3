@@ -10,6 +10,7 @@ internal data class ArcadeControlLayout(
     val buttons: List<ArcadeControlButton>,
     val gun: Boolean = false,
     val triggerMask: Long = 0,
+    val mirrorGunAim: Boolean = false,
     val rotaryEncoder: Boolean = false,
     val dpad: Map<String, Long> = emptyMap()
 )
@@ -48,12 +49,13 @@ internal object TeknoParrotArcadeControlProfiles {
             )
         ),
         "DSPS" to gun(
-            0x800000,
+            0x400000,
             listOf(
-                button("ALT", 0x400000), button("START", 0x200000),
+                button("ALT", 0x800000), button("START", 0x200000),
                 button("UP", 0x2000), button("DOWN", 0x1000),
                 wheelLeft, wheelRight, button("ENTER", 0x200)
             ),
+            mirrorGunAim = true,
             rotaryEncoder = true
         ),
         "RazingStorm" to gun(
@@ -87,11 +89,13 @@ internal object TeknoParrotArcadeControlProfiles {
     private fun gun(
         trigger: Long,
         actions: List<ArcadeControlButton>,
+        mirrorGunAim: Boolean = false,
         rotaryEncoder: Boolean = false
     ) = ArcadeControlLayout(
         actions + coin + button("SERVICE", 0x4000) + test,
         gun = true,
         triggerMask = trigger,
+        mirrorGunAim = mirrorGunAim,
         rotaryEncoder = rotaryEncoder
     )
 

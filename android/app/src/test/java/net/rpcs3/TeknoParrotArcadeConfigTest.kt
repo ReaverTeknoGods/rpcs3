@@ -7,6 +7,14 @@ import org.junit.Test
 
 class TeknoParrotArcadeConfigTest {
     @Test
+    fun titlesThatNeedSpuInterruptsOrArm64FallbackUseDynamicInterpreter() {
+        assertEquals("Interpreter (dynamic)", TeknoParrotArcadeConfig.spuDecoder("RazingStorm"))
+        assertEquals("Interpreter (dynamic)", TeknoParrotArcadeConfig.spuDecoder("dbzenkai"))
+        assertEquals("Interpreter (dynamic)", TeknoParrotArcadeConfig.spuDecoder("AKB48"))
+        assertEquals("Recompiler (LLVM)", TeknoParrotArcadeConfig.spuDecoder("DSPS"))
+    }
+
+    @Test
     fun securityFileNamesMatchTheDesktopLauncher() {
         assertEquals("s357secr.bin", TeknoParrotArcadeConfig.securityFileName("DSPS"))
         assertEquals("s357secr.bin", TeknoParrotArcadeConfig.securityFileName("RazingStorm"))

@@ -4313,7 +4313,12 @@ public:
 							const auto arg3 = UndefValue::get(get_type<u32>());
 							const auto _ret = m_ir->CreateCall(if_type, fret, {m_lsptr, m_thread, m_interp_pc, arg3, m_interp_table, m_interp_7f0, m_interp_regs});
 							_ret->setCallingConv(CallingConv::GHC);
-							_ret->setTailCall();
+							// A normal tail-call marker is only an optimization hint. LLVM may
+							// leave a frame behind on AArch64, which overflows the host stack
+							// when CellSpurs waits in a self-branching instruction. These
+							// interpreter helpers have an identical GHC signature, so require
+							// the tail call and keep the dynamic interpreter stack constant.
+							_ret->setTailCallKind(CallInst::TCK_MustTail);
 							m_ir->CreateRetVoid();
 						}
 
@@ -4337,7 +4342,7 @@ public:
 
 							const auto ncall = m_ir->CreateCall(if_type, next_if, {m_lsptr, m_thread, m_interp_pc, next_op, m_interp_table, m_interp_7f0, m_interp_regs});
 							ncall->setCallingConv(CallingConv::GHC);
-							ncall->setTailCall();
+							ncall->setTailCallKind(CallInst::TCK_MustTail);
 							m_ir->CreateRetVoid();
 							m_ir->SetInsertPoint(_stop);
 							m_ir->CreateStore(m_interp_pc, spu_ptr(&spu_thread::pc));

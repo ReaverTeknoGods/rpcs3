@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.SystemClock
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -14,6 +15,8 @@ import kotlin.math.min
 class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val heldPointers = mutableMapOf<Int, ArcadeControlButton>()
+    private val pointerDownTimes = mutableMapOf<Int, Long>()
+    private val pulsedButtons = mutableMapOf<ArcadeControlButton, Long>()
     private val controllerHeld = mutableSetOf<ArcadeControlButton>()
     private var profileName = ""
     private var layout = ArcadeControlLayout(emptyList())
@@ -21,6 +24,16 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
     private var aimY = 128
     private var rotaryEncoder = 0
     private var rotaryRepeatRunning = false
+
+    private val pulseRelease = object : Runnable {
+        override fun run() {
+            val now = SystemClock.uptimeMillis()
+            pulsedButtons.entries.removeAll { it.value <= now }
+            publish()
+            invalidate()
+            pulsedButtons.values.minOrNull()?.let { postDelayed(this, (it - now).coerceAtLeast(1)) }
+        }
+    }
 
     private val rotaryRepeat = object : Runnable {
         override fun run() {
@@ -38,8 +51,11 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
 
     fun configure(profile: String) {
         removeCallbacks(rotaryRepeat)
+        removeCallbacks(pulseRelease)
         rotaryRepeatRunning = false
         heldPointers.clear()
+        pointerDownTimes.clear()
+        pulsedButtons.clear()
         controllerHeld.clear()
         profileName = profile
         layout = TeknoParrotArcadeControlProfiles.forProfile(profile)
@@ -64,7 +80,8 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         }
 
         buttonRects().forEach { (button, rect) ->
-            val down = heldPointers.containsValue(button) || controllerHeld.contains(button)
+            val down = heldPointers.containsValue(button) || controllerHeld.contains(button) ||
+                pulsedButtons.containsKey(button)
             paint.color = if (down) Color.argb(210, 255, 116, 32)
                 else Color.argb(145, 22, 22, 26)
             canvas.drawRoundRect(rect, 18f, 18f, paint)
@@ -89,6 +106,9 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
                     heldPointers[pointer] = ArcadeControlButton("TRIGGER", layout.triggerMask)
                     updateAim(x, y)
                 }
+                if (heldPointers.containsKey(pointer)) {
+                    pointerDownTimes[pointer] = SystemClock.uptimeMillis()
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
@@ -97,8 +117,20 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
-                if (event.actionMasked == MotionEvent.ACTION_CANCEL) heldPointers.clear()
-                else heldPointers.remove(pointer)
+                if (event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                    heldPointers.clear()
+                    pointerDownTimes.clear()
+                } else {
+                    val released = heldPointers.remove(pointer)
+                    val pressedAt = pointerDownTimes.remove(pointer)
+                    if (released != null && pressedAt != null && shouldPulse(released)) {
+                        val until = pressedAt + minimumPulseMs(released)
+                        if (until > SystemClock.uptimeMillis()) {
+                            pulsedButtons[released] = maxOf(pulsedButtons[released] ?: 0, until)
+                            schedulePulseRelease()
+                        }
+                    }
+                }
             }
         }
         updateRotaryRepeat()
@@ -181,14 +213,29 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
             ?: layout.dpad[label]?.let { ArcadeControlButton(label, it) }
 
     private fun publish() {
-        val held = heldPointers.values + controllerHeld
+        val held = heldPointers.values + controllerHeld + pulsedButtons.keys
         val mask = held.fold(0L) { value, button -> value or button.mask }
         val vitalSensor = if (profileName == "DarkEscape4D") 60 else 128
-        RPCS3.instance.arcadeInput(mask, aimX, aimY, 128, 128, vitalSensor, vitalSensor, 128,
+        val secondAimX = if (layout.mirrorGunAim) aimX else 128
+        val secondAimY = if (layout.mirrorGunAim) aimY else 128
+        RPCS3.instance.arcadeInput(mask, aimX, aimY, secondAimX, secondAimY,
+            vitalSensor, vitalSensor, 128,
             rotaryEncoder, 0, 0, 0,
             held.any { it.special == "coin" },
             held.any { it.special == "test" },
             held.any { it.special == "card" })
+    }
+
+    private fun shouldPulse(button: ArcadeControlButton) =
+        button.label == "START" || button.label == "TRIGGER" || button.special == "coin"
+
+    private fun minimumPulseMs(button: ArcadeControlButton) =
+        if (button.label == "TRIGGER") TRIGGER_PULSE_MS else BUTTON_PULSE_MS
+
+    private fun schedulePulseRelease() {
+        removeCallbacks(pulseRelease)
+        val now = SystemClock.uptimeMillis()
+        pulsedButtons.values.minOrNull()?.let { postDelayed(pulseRelease, (it - now).coerceAtLeast(1)) }
     }
 
     private fun updateAim(x: Float, y: Float) {
@@ -252,6 +299,7 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
 
     override fun onDetachedFromWindow() {
         removeCallbacks(rotaryRepeat)
+        removeCallbacks(pulseRelease)
         rotaryRepeatRunning = false
         super.onDetachedFromWindow()
     }
@@ -259,5 +307,7 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
     companion object {
         private const val ROTARY_INTERVAL_MS = 16L
         private const val ROTARY_STEP = 8
+        private const val BUTTON_PULSE_MS = 350L
+        private const val TRIGGER_PULSE_MS = 120L
     }
 }

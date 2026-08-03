@@ -174,20 +174,13 @@ object TeknoParrotArcadeConfig {
         // Zenkai's SPU block at 0xcfc cannot be allocated by LLVM on ARM64,
         // including RPCS3's retry without TBL2/TBX2. AKB48 completes its LLVM
         // cache but then leaves all five CellSpurs kernels and RSX spinning on
-        // a frozen frame. Razing Storm likewise leaves an ARM64 SPU LLVM
-        // worker in an uninterruptible loop during startup, while its parallel
-        // CellSpurs kernels crash the dynamic interpreter's generated blocks.
-        // Use the dynamic interpreter for Zenkai and AKB48, keep Razing on the
-        // non-JIT static interpreter, and retain LLVM elsewhere. Reset this
-        // shared setting on every arcade launch.
+        // a frozen frame. Razing Storm requires the interrupt-capable dynamic
+        // interpreter: LLVM stalls its CellSpurs kernels, while the static
+        // interpreter cannot feed the movie/ATRAC pipelines in real time.
+        // Reset this shared setting on every arcade launch.
         check(RPCS3.instance.settingsSet(
             "Core@@SPU Decoder",
-            if (profileName == "dbzenkai" || profileName == "AKB48")
-                "\"Interpreter (dynamic)\""
-            else if (profileName == "RazingStorm")
-                "\"Interpreter (static)\""
-            else
-                "\"Recompiler (LLVM)\""
+            "\"${spuDecoder(profileName)}\""
         ))
         check(RPCS3.instance.settingsSet(
             "Video@@Write Color Buffers",
@@ -201,6 +194,12 @@ object TeknoParrotArcadeConfig {
             "s357secr.bin"
         else
             "s357security.bin"
+
+    internal fun spuDecoder(profileName: String): String =
+        if (profileName == "dbzenkai" || profileName == "AKB48" || profileName == "RazingStorm")
+            "Interpreter (dynamic)"
+        else
+            "Recompiler (LLVM)"
 
     internal fun boardStorageData(profileName: String): ByteArray? =
         boardStorage[profileName]?.let { identity ->
