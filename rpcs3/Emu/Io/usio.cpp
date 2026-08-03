@@ -25,6 +25,7 @@ struct android_arcade_input
 {
 	u64 control = 0;
 	std::array<u8, 7> analog{};
+	std::array<u8, 4> rotary{};
 	u8 coin = 0;
 	u8 test = 0;
 	u8 card = 0;
@@ -34,11 +35,12 @@ static std::mutex g_android_arcade_mutex;
 static android_arcade_input g_android_arcade_input;
 
 void usio_set_android_arcade_input(u64 control, const std::array<u8, 7>& analog,
-	bool coin, bool test, bool card)
+	const std::array<u8, 4>& rotary, bool coin, bool test, bool card)
 {
 	std::lock_guard lock(g_android_arcade_mutex);
 	g_android_arcade_input.control = control;
 	g_android_arcade_input.analog = analog;
+	g_android_arcade_input.rotary = rotary;
 	g_android_arcade_input.coin = coin;
 	g_android_arcade_input.test = test ? 0x80 : 0;
 	g_android_arcade_input.card = card;
@@ -423,6 +425,7 @@ void usb_device_usio::translate_input_0x1000()
 	const auto input = get_android_arcade_input();
 	tekno_control = input.control;
 	std::copy(input.analog.begin(), input.analog.end(), analog_data);
+	std::copy(input.rotary.begin(), input.rotary.end(), rotary_encoders);
 	coin_state = input.coin;
 	test_state = input.test;
 	card_state[0] = input.card;

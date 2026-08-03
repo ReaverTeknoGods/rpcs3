@@ -1693,8 +1693,9 @@ extern "C" JNIEXPORT jboolean JNICALL Java_net_rpcs3_RPCS3_overlayPadData(
 
 extern "C" JNIEXPORT void JNICALL Java_net_rpcs3_RPCS3_arcadeInput(
     JNIEnv *, jobject, jlong control, jint analog0, jint analog1, jint analog2,
-    jint analog3, jint analog4, jint analog5, jint analog6, jboolean coin,
-    jboolean test, jboolean card) {
+    jint analog3, jint analog4, jint analog5, jint analog6, jint rotary0,
+    jint rotary1, jint rotary2, jint rotary3, jboolean coin, jboolean test,
+    jboolean card) {
   const std::array<u8, 7> analog = {
       static_cast<u8>(std::clamp(analog0, 0, 255)),
       static_cast<u8>(std::clamp(analog1, 0, 255)),
@@ -1703,7 +1704,12 @@ extern "C" JNIEXPORT void JNICALL Java_net_rpcs3_RPCS3_arcadeInput(
       static_cast<u8>(std::clamp(analog4, 0, 255)),
       static_cast<u8>(std::clamp(analog5, 0, 255)),
       static_cast<u8>(std::clamp(analog6, 0, 255))};
-  usio_set_android_arcade_input(static_cast<u64>(control), analog,
+  const std::array<u8, 4> rotary = {
+      static_cast<u8>(std::clamp(rotary0, 0, 255)),
+      static_cast<u8>(std::clamp(rotary1, 0, 255)),
+      static_cast<u8>(std::clamp(rotary2, 0, 255)),
+      static_cast<u8>(std::clamp(rotary3, 0, 255))};
+  usio_set_android_arcade_input(static_cast<u64>(control), analog, rotary,
                                 coin == JNI_TRUE, test == JNI_TRUE,
                                 card == JNI_TRUE);
 }

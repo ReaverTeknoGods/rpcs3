@@ -12,25 +12,40 @@ import kotlin.math.min
 
 /** Profile-specific System 357/369 controls backed by RPCS3's USIO bridge. */
 class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
-    private data class Button(val label: String, val mask: Long = 0, val special: String = "")
-    private data class Layout(
-        val buttons: List<Button>,
-        val gun: Boolean = false,
-        val triggerMask: Long = 0,
-        val dpad: Map<String, Long> = emptyMap()
-    )
-
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val heldPointers = mutableMapOf<Int, Button>()
-    private val controllerHeld = mutableSetOf<Button>()
+    private val heldPointers = mutableMapOf<Int, ArcadeControlButton>()
+    private val controllerHeld = mutableSetOf<ArcadeControlButton>()
     private var profileName = ""
-    private var layout = Layout(emptyList())
+    private var layout = ArcadeControlLayout(emptyList())
     private var aimX = 128
     private var aimY = 128
+    private var rotaryEncoder = 0
+    private var rotaryRepeatRunning = false
+
+    private val rotaryRepeat = object : Runnable {
+        override fun run() {
+            val direction = rotaryDirection()
+            if (direction == 0 || !layout.rotaryEncoder) {
+                rotaryRepeatRunning = false
+                return
+            }
+            rotaryEncoder = (rotaryEncoder + direction * ROTARY_STEP) and 0xff
+            publish()
+            invalidate()
+            postDelayed(this, ROTARY_INTERVAL_MS)
+        }
+    }
 
     fun configure(profile: String) {
+        removeCallbacks(rotaryRepeat)
+        rotaryRepeatRunning = false
+        heldPointers.clear()
+        controllerHeld.clear()
         profileName = profile
-        layout = layouts[profile] ?: Layout(emptyList())
+        layout = TeknoParrotArcadeControlProfiles.forProfile(profile)
+        aimX = 128
+        aimY = 128
+        rotaryEncoder = 0
         visibility = if (layout.buttons.isEmpty()) GONE else VISIBLE
         publish()
         invalidate()
@@ -40,12 +55,11 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         super.onDraw(canvas)
         if (layout.gun) {
             paint.color = Color.argb(26, 255, 255, 255)
-            canvas.drawRect(width * .18f, height * .08f, width * .82f, height * .9f, paint)
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2f
             paint.color = Color.argb(120, 255, 255, 255)
-            canvas.drawCircle(width * .18f + aimX / 255f * width * .64f,
-                height * .08f + aimY / 255f * height * .82f, 16f, paint)
+            canvas.drawCircle(aimX / 255f * width, aimY / 255f * height, 16f, paint)
             paint.style = Paint.Style.FILL
         }
 
@@ -72,7 +86,7 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
                 val button = buttonRects().firstOrNull { it.second.contains(x, y) }?.first
                 if (button != null) heldPointers[pointer] = button
                 else if (layout.gun && inAimArea(x, y)) {
-                    heldPointers[pointer] = Button("TRIGGER", layout.triggerMask)
+                    heldPointers[pointer] = ArcadeControlButton("TRIGGER", layout.triggerMask)
                     updateAim(x, y)
                 }
             }
@@ -87,6 +101,7 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
                 else heldPointers.remove(pointer)
             }
         }
+        updateRotaryRepeat()
         publish()
         invalidate()
         return true
@@ -96,8 +111,8 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         val button = when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> semantic("UP")
             KeyEvent.KEYCODE_DPAD_DOWN -> semantic("DOWN")
-            KeyEvent.KEYCODE_DPAD_LEFT -> semantic("LEFT")
-            KeyEvent.KEYCODE_DPAD_RIGHT -> semantic("RIGHT")
+            KeyEvent.KEYCODE_DPAD_LEFT -> semantic("LEFT") ?: semantic("WHEEL L")
+            KeyEvent.KEYCODE_DPAD_RIGHT -> semantic("RIGHT") ?: semantic("WHEEL R")
             KeyEvent.KEYCODE_BUTTON_X -> action(0)
             KeyEvent.KEYCODE_BUTTON_Y -> action(1)
             KeyEvent.KEYCODE_BUTTON_A -> action(2)
@@ -107,12 +122,14 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
             KeyEvent.KEYCODE_BUTTON_L2 -> if (layout.gun) action(1) else action(4)
             KeyEvent.KEYCODE_BUTTON_R2 -> if (layout.gun) action(0) else action(5)
             KeyEvent.KEYCODE_BUTTON_START -> semantic("START")
-            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_THUMBL -> Button("COIN", special = "coin")
+            KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_THUMBL ->
+                ArcadeControlButton("COIN", special = "coin")
             KeyEvent.KEYCODE_BUTTON_THUMBR -> semantic("SERVICE")
             KeyEvent.KEYCODE_BUTTON_MODE -> semantic("TEST")
             else -> null
         } ?: return false
         if (down) controllerHeld += button else controllerHeld -= button
+        updateRotaryRepeat()
         publish()
         invalidate()
         return true
@@ -122,8 +139,8 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         if (layout.buttons.isEmpty()) return false
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
-        setController(semantic("LEFT"), hatX < -.35f)
-        setController(semantic("RIGHT"), hatX > .35f)
+        setController(semantic("LEFT") ?: semantic("WHEEL L"), hatX < -.35f)
+        setController(semantic("RIGHT") ?: semantic("WHEEL R"), hatX > .35f)
         setController(semantic("UP"), hatY < -.35f)
         setController(semantic("DOWN"), hatY > .35f)
         val leftTrigger = maxOf(
@@ -138,54 +155,87 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
             aimX = (event.getAxisValue(MotionEvent.AXIS_X).coerceIn(-1f, 1f) * 127f + 128f).toInt()
             aimY = (event.getAxisValue(MotionEvent.AXIS_Y).coerceIn(-1f, 1f) * 127f + 128f).toInt()
         }
+        updateRotaryRepeat()
         publish()
         invalidate()
         return true
     }
 
-    private fun setController(button: Button?, down: Boolean) {
+    private fun setController(button: ArcadeControlButton?, down: Boolean) {
         if (button == null) return
         if (down) controllerHeld += button else controllerHeld -= button
     }
 
-    private fun action(index: Int): Button? {
+    private fun action(index: Int): ArcadeControlButton? {
         val actions = layout.buttons
-            .filter { it.label !in systemLabels && it.special.isEmpty() }
+            .filter {
+                it.label !in TeknoParrotArcadeControlProfiles.systemLabels && it.special.isEmpty()
+            }
             .toMutableList()
-        if (layout.gun) actions.add(0, Button("TRIGGER", layout.triggerMask))
+        if (layout.gun) actions.add(0, ArcadeControlButton("TRIGGER", layout.triggerMask))
         return actions.getOrNull(index)
     }
 
-    private fun semantic(label: String): Button? = layout.buttons.firstOrNull { it.label == label }
-        ?: layout.dpad[label]?.let { Button(label, it) }
+    private fun semantic(label: String): ArcadeControlButton? =
+        layout.buttons.firstOrNull { it.label == label }
+            ?: layout.dpad[label]?.let { ArcadeControlButton(label, it) }
 
     private fun publish() {
         val held = heldPointers.values + controllerHeld
         val mask = held.fold(0L) { value, button -> value or button.mask }
         val vitalSensor = if (profileName == "DarkEscape4D") 60 else 128
         RPCS3.instance.arcadeInput(mask, aimX, aimY, 128, 128, vitalSensor, vitalSensor, 128,
+            rotaryEncoder, 0, 0, 0,
             held.any { it.special == "coin" },
             held.any { it.special == "test" },
             held.any { it.special == "card" })
     }
 
     private fun updateAim(x: Float, y: Float) {
-        aimX = (((x / width - .18f) / .64f) * 255).toInt().coerceIn(0, 255)
-        aimY = (((y / height - .08f) / .82f) * 255).toInt().coerceIn(0, 255)
+        aimX = (x / width * 255).toInt().coerceIn(0, 255)
+        aimY = (y / height * 255).toInt().coerceIn(0, 255)
     }
 
     private fun inAimArea(x: Float, y: Float) =
-        x in width * .18f..width * .82f && y in height * .08f..height * .9f
+        x in 0f..width.toFloat() && y in 0f..height.toFloat()
 
-    private fun buttonRects(): List<Pair<Button, RectF>> {
+    private fun rotaryDirection(): Int {
+        val held = heldPointers.values + controllerHeld
+        val left = held.any { it.special == "rotary-left" }
+        val right = held.any { it.special == "rotary-right" }
+        return when {
+            left == right -> 0
+            left -> -1
+            else -> 1
+        }
+    }
+
+    private fun updateRotaryRepeat() {
+        val active = layout.rotaryEncoder && rotaryDirection() != 0
+        if (active && !rotaryRepeatRunning) {
+            rotaryRepeatRunning = true
+            rotaryRepeat.run()
+        } else if (!active && rotaryRepeatRunning) {
+            removeCallbacks(rotaryRepeat)
+            rotaryRepeatRunning = false
+        }
+    }
+
+    private fun buttonRects(): List<Pair<ArcadeControlButton, RectF>> {
         val buttons = layout.buttons
         if (buttons.isEmpty()) return emptyList()
         val size = min(width, height) * .14f
-        val left = buttons.filter { it.label in setOf("UP", "DOWN", "LEFT", "RIGHT") }
+        val left = buttons.filter {
+            it.label in setOf("UP", "DOWN", "LEFT", "RIGHT", "WHEEL L", "WHEEL R")
+        }
         val others = buttons - left.toSet()
-        val result = mutableListOf<Pair<Button, RectF>>()
+        val result = mutableListOf<Pair<ArcadeControlButton, RectF>>()
         left.forEach { button ->
-            val cx = when (button.label) { "LEFT" -> size; "RIGHT" -> size * 3; else -> size * 2 }
+            val cx = when (button.label) {
+                "LEFT", "WHEEL L" -> size
+                "RIGHT", "WHEEL R" -> size * 3
+                else -> size * 2
+            }
             val cy = when (button.label) { "UP" -> height - size * 3; "DOWN" -> height - size; else -> height - size * 2 }
             result += button to RectF(cx - size * .48f, cy - size * .48f, cx + size * .48f, cy + size * .48f)
         }
@@ -200,36 +250,14 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         return result
     }
 
+    override fun onDetachedFromWindow() {
+        removeCallbacks(rotaryRepeat)
+        rotaryRepeatRunning = false
+        super.onDetachedFromWindow()
+    }
+
     companion object {
-        private val systemLabels = setOf("UP", "DOWN", "LEFT", "RIGHT", "START", "COIN", "SERVICE", "TEST", "CARD")
-        private fun b(label: String, mask: Long) = Button(label, mask)
-        private val coin = Button("COIN", special = "coin")
-        private val test = Button("TEST", special = "test")
-        private val card = Button("CARD", special = "card")
-        private val layouts = mapOf(
-            "DarkEscape4D" to gun(0x800000, listOf(b("ALT", 0x400000), b("START", 0x200000), b("UP", 0x2000), b("DOWN", 0x1000), b("ENTER", 0x200), b("TOGGLE", 0x20000))),
-            "AKB48" to gun(0x800000, listOf(b("ALT", 0x400000), b("START", 0x200000), b("UP", 0x2000), b("DOWN", 0x1000), b("ENTER", 0x200))),
-            "DSPS" to gun(0x800000, listOf(b("ALT", 0x400000), b("START", 0x200000), b("UP", 0x2000), b("DOWN", 0x1000), b("ENTER", 0x200))),
-            "RazingStorm" to gun(0x200000, listOf(b("PEDAL", 0x80000), b("START", 0x800000), b("UP", 0x2000), b("DOWN", 0x1000), b("ENTER", 0x200))),
-            "Tekken6" to fighter(false), "Tekken6BR" to fighter(false),
-            "ttt2" to fighter(true), "ttt2u" to fighter(true),
-            "taikogreen" to taiko(), "taikoyellow" to taiko(),
-            "dbzenkai" to Layout(listOf(
-                b("UP", 0x200000), b("DOWN", 0x100000), b("LEFT", 0x80000), b("RIGHT", 0x40000),
-                b("A1", 0x20000), b("A2", 0x10000), b("A3", 0x80000000L), b("A4", 0x40000000), b("A5", 0x20000000),
-                b("START", 0x800000), coin, b("SERVICE", 0x400000), test))
-        )
-        private fun gun(trigger: Long, actions: List<Button>) = Layout(
-            actions + coin + b("SERVICE", 0x4000) + test, true, trigger)
-        private fun fighter(tag: Boolean): Layout = if (tag) Layout(listOf(
-            b("UP", 0x200000), b("DOWN", 0x100000), b("LEFT", 0x80000), b("RIGHT", 0x40000),
-            b("LP", 0x20000), b("RP", 0x10000), b("LK", 0x40000000), b("RK", 0x20000000), b("TAG", 0x80000000L),
-            b("START", 0x800000), coin, b("SERVICE", 0x4000), test, card)) else Layout(listOf(
-            b("UP", 0x2000), b("DOWN", 0x1000), b("LEFT", 0x800), b("RIGHT", 0x400),
-            b("LP", 0x200), b("RP", 0x100), b("LK", 0x400000), b("RK", 0x200000),
-            b("START", 0x8000), coin, b("SERVICE", 0x4000), test))
-        private fun taiko() = Layout(listOf(
-            b("KA L", 0x200), b("DON L", 0x4), b("DON R", 0x20), b("KA R", 0x80000),
-            b("START", 0x2), coin, b("SERVICE", 0x40), b("TEST", 0x1)))
+        private const val ROTARY_INTERVAL_MS = 16L
+        private const val ROTARY_STEP = 8
     }
 }
