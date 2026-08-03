@@ -3,7 +3,12 @@ package net.rpcs3
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
@@ -33,6 +38,18 @@ class MainActivity : ComponentActivity() {
         FirmwareRepository.load()
 
         Permission.PostNotifications.requestPermission(this)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            !Environment.isExternalStorageManager()) {
+            val appPermission = Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:$packageName")
+            )
+            runCatching { startActivity(appPermission) }
+                .getOrElse {
+                    startActivity(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                }
+        }
 
         with(getSystemService(NOTIFICATION_SERVICE) as NotificationManager) {
             val channel = NotificationChannel(

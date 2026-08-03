@@ -46,6 +46,7 @@ if grep -Fq "launchable-activity:" <<<"$badging" ||
 fi
 
 for required in \
+  "android.permission.MANAGE_EXTERNAL_STORAGE" \
   "com.teknoparrot.permission.BIND_BRIDGE" \
   "com.teknoparrot.rpcs3x6.action.LAUNCH_GAME" \
   "com.teknoparrot.rpcs3x6.action.SETUP" \

@@ -2,6 +2,8 @@ package net.rpcs3
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
 import java.io.File
 
 object TeknoParrotSession {
@@ -21,14 +23,21 @@ object TeknoParrotSession {
         val candidatePath = intent.getStringExtra(TeknoParrotContract.EXTRA_GAME_PATH)
             ?.takeIf { it.isNotBlank() }
             ?: return null
-        val root = context.getExternalFilesDir(null)?.canonicalFile ?: return null
-        val resolved = File(candidatePath).let { if (it.isAbsolute) it else File(root, candidatePath) }
-            .canonicalFile
+        if (!TeknoParrotGamePath.isConfigured(candidatePath)) return null
+        val appRoot = context.getExternalFilesDir(null)?.canonicalFile ?: return null
+        val storageRoot = File("/storage").canonicalFile
+        val resolved = File(candidatePath).canonicalFile
+        val appOwned = resolved.toPath().startsWith(appRoot.toPath())
 
-        // TPUI launches content that has already been imported into the
-        // companion's private external-files area. Never accept an arbitrary
-        // path supplied by another process.
-        if (!resolved.toPath().startsWith(root.toPath()) || !resolved.exists()) return null
+        // The exported launch Activity is signature protected, but still
+        // constrain its payload to an actual System 357/369 EBOOT under
+        // Android shared storage. Direct user-selected game trees require the
+        // explicit all-files grant; legacy app-owned paths remain readable.
+        if (!resolved.toPath().startsWith(storageRoot.toPath()) ||
+            !TeknoParrotGamePath.isConfigured(resolved.absolutePath) ||
+            !resolved.isFile ||
+            (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                !appOwned && !Environment.isExternalStorageManager())) return null
 
         callbackPackage = TeknoParrotContract.TPUI_PACKAGE
         token = candidateToken

@@ -140,10 +140,12 @@ jobs:
           chmod +x ./gradlew
           if [[ "${{ steps.version.outputs.release_build }}" == "true" ]]; then
             task=:app:assembleRelease
+            test_task=:app:testReleaseUnitTest
           else
             task=:app:assembleDebug
+            test_task=:app:testDebugUnitTest
           fi
-          ./gradlew --no-daemon --stacktrace "$task"
+          ./gradlew --no-daemon --stacktrace "$test_task" "$task"
 
       - name: Verify and package APK
         id: package

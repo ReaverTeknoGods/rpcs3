@@ -3,6 +3,8 @@ package net.rpcs3
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Environment
 import kotlin.concurrent.thread
 
 class TeknoParrotSessionControlReceiver : BroadcastReceiver() {
@@ -96,7 +98,9 @@ class TeknoParrotSessionControlReceiver : BroadcastReceiver() {
     private fun sendFirmwareStatus(context: Context, token: String) {
         val ready = runCatching {
             val root = context.getExternalFilesDir(null) ?: return@runCatching false
-            FirmwareRepository.isReady(root)
+            FirmwareRepository.isReady(root) &&
+                (Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+                    Environment.isExternalStorageManager())
         }.getOrDefault(false)
 
         context.applicationContext.sendBroadcast(

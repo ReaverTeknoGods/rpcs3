@@ -93,8 +93,7 @@ class RPCS3Activity : Activity() {
             positionCompanionOverlayToggle()
             val profileName = intent.getStringExtra(TeknoParrotContract.EXTRA_PROFILE_NAME).orEmpty()
             arcadeOverlay.configure(profileName)
-            val arcadeRoot = File(gamePath).parentFile?.parentFile?.parentFile
-                ?.parentFile?.parentFile
+            val arcadeRoot = TeknoParrotGamePath.arcadeRoot(gamePath)
             val vfsConfig = arcadeRoot?.let {
                 TeknoParrotArcadeConfig.prepare(applicationContext, profileName, it)
             }
