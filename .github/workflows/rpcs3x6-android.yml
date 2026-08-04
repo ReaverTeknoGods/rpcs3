@@ -62,7 +62,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-          fetch-depth: 0
+          # The Android build needs the pinned tree and submodules, not the
+          # complete RPCS3 history. A shallow checkout avoids transferring the
+          # full repository on every release run.
+          fetch-depth: 1
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
