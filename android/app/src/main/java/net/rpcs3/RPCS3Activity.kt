@@ -245,7 +245,7 @@ class RPCS3Activity : Activity() {
         if (event == null || (event.source and (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_JOYSTICK or InputDevice.SOURCE_DPAD)) == 0 || event.repeatCount != 0) {
             return super.onKeyDown(keyCode, event)
         }
-        if (companionSession && arcadeOverlay.onControllerKey(keyCode, true)) return true
+        if (companionSession && arcadeOverlay.onControllerKey(event.deviceId, keyCode, true)) return true
         val padBit = keyCodeToPadBit(keyCode)
         if (padBit.first == 0) {
             return super.onKeyDown(keyCode, event)
@@ -261,7 +261,7 @@ class RPCS3Activity : Activity() {
             return super.onKeyUp(keyCode, event)
         }
 
-        if (companionSession && arcadeOverlay.onControllerKey(keyCode, false)) return true
+        if (companionSession && arcadeOverlay.onControllerKey(event.deviceId, keyCode, false)) return true
         val padBit = keyCodeToPadBit(keyCode)
         if (padBit.first == 0) {
             return super.onKeyUp(keyCode, event)

@@ -10,6 +10,11 @@ internal data class ArcadeControlLayout(
     val buttons: List<ArcadeControlButton>,
     val gun: Boolean = false,
     val triggerMask: Long = 0,
+    val secondaryTriggerMask: Long = 0,
+    val fireCompanionMask: Long = 0,
+    val secondaryFireCompanionMask: Long = 0,
+    val secondaryAltTriggerMask: Long = 0,
+    val secondaryStartMask: Long = 0,
     val mirrorGunAim: Boolean = false,
     val rotaryEncoder: Boolean = false,
     val dpad: Map<String, Long> = emptyMap()
@@ -39,14 +44,20 @@ internal object TeknoParrotArcadeControlProfiles {
                 button("ALT", 0x400000), button("START", 0x200000),
                 button("UP", 0x2000), button("DOWN", 0x1000),
                 button("ENTER", 0x200), button("TOGGLE", 0x20000)
-            )
+            ),
+            secondaryTrigger = 0x100000,
+            secondaryAltTrigger = 0x80000,
+            secondaryStart = 0x40000
         ),
         "AKB48" to gun(
             0x800000,
             listOf(
                 button("ALT", 0x400000), button("START", 0x200000),
                 button("UP", 0x2000), button("DOWN", 0x1000), button("ENTER", 0x200)
-            )
+            ),
+            secondaryTrigger = 0x100000,
+            secondaryAltTrigger = 0x80000,
+            secondaryStart = 0x40000
         ),
         "DSPS" to gun(
             0x400000,
@@ -55,6 +66,11 @@ internal object TeknoParrotArcadeControlProfiles {
                 button("UP", 0x2000), button("DOWN", 0x1000),
                 wheelLeft, wheelRight, button("ENTER", 0x200)
             ),
+            secondaryTrigger = 0x80000,
+            fireCompanion = 0x800000,
+            secondaryFireCompanion = 0x100000,
+            secondaryAltTrigger = 0x100000,
+            secondaryStart = 0x40000,
             mirrorGunAim = true,
             rotaryEncoder = true
         ),
@@ -63,7 +79,12 @@ internal object TeknoParrotArcadeControlProfiles {
             listOf(
                 button("PEDAL", 0x80000), button("START", 0x800000),
                 button("UP", 0x2000), button("DOWN", 0x1000), button("ENTER", 0x200)
-            )
+            ),
+            secondaryTrigger = 0x100000,
+            fireCompanion = 0x80000,
+            secondaryFireCompanion = 0x40000,
+            secondaryAltTrigger = 0x40000,
+            secondaryStart = 0x400000
         ),
         "Tekken6" to fighter(tag = false),
         "Tekken6BR" to fighter(tag = false),
@@ -89,12 +110,22 @@ internal object TeknoParrotArcadeControlProfiles {
     private fun gun(
         trigger: Long,
         actions: List<ArcadeControlButton>,
+        secondaryTrigger: Long = 0,
+        fireCompanion: Long = 0,
+        secondaryFireCompanion: Long = 0,
+        secondaryAltTrigger: Long = 0,
+        secondaryStart: Long = 0,
         mirrorGunAim: Boolean = false,
         rotaryEncoder: Boolean = false
     ) = ArcadeControlLayout(
         actions + coin + button("SERVICE", 0x4000) + test,
         gun = true,
         triggerMask = trigger,
+        secondaryTriggerMask = secondaryTrigger,
+        fireCompanionMask = fireCompanion,
+        secondaryFireCompanionMask = secondaryFireCompanion,
+        secondaryAltTriggerMask = secondaryAltTrigger,
+        secondaryStartMask = secondaryStart,
         mirrorGunAim = mirrorGunAim,
         rotaryEncoder = rotaryEncoder
     )

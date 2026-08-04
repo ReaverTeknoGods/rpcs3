@@ -86,19 +86,30 @@ class TeknoParrotArcadeControlProfilesTest {
     @Test
     fun gunAndCabinetSpecificControlsAreComplete() {
         mapOf(
-            "DarkEscape4D" to 0x800000L,
-            "AKB48" to 0x800000L,
-            "DSPS" to 0x400000L,
-            "RazingStorm" to 0x200000L
-        ).forEach { (profile, trigger) ->
+            "DarkEscape4D" to Triple(0x800000L, 0x100000L, 0L),
+            "AKB48" to Triple(0x800000L, 0x100000L, 0L),
+            "DSPS" to Triple(0x400000L, 0x80000L, 0x800000L),
+            "RazingStorm" to Triple(0x200000L, 0x100000L, 0x80000L)
+        ).forEach { (profile, masks) ->
             val layout = TeknoParrotArcadeControlProfiles.forProfile(profile)
             assertTrue("$profile must use absolute gun aiming", layout.gun)
-            assertEquals("$profile trigger", trigger, layout.triggerMask)
+            assertEquals("$profile P1 trigger", masks.first, layout.triggerMask)
+            assertEquals("$profile P2 trigger", masks.second, layout.secondaryTriggerMask)
+            assertEquals("$profile required fire companion", masks.third,
+                layout.fireCompanionMask)
             assertTrue(layout.buttons.any { it.special == "coin" })
             assertTrue(layout.buttons.any { it.special == "test" })
         }
 
+        val razing = TeknoParrotArcadeControlProfiles.forProfile("RazingStorm")
+        assertEquals(0x40000L, razing.secondaryFireCompanionMask)
+        assertEquals(0x40000L, razing.secondaryAltTriggerMask)
+        assertEquals(0x400000L, razing.secondaryStartMask)
+
         val deadstorm = TeknoParrotArcadeControlProfiles.forProfile("DSPS")
+        assertEquals(0x100000L, deadstorm.secondaryFireCompanionMask)
+        assertEquals(0x100000L, deadstorm.secondaryAltTriggerMask)
+        assertEquals(0x40000L, deadstorm.secondaryStartMask)
         assertTrue(deadstorm.rotaryEncoder)
         assertTrue(deadstorm.mirrorGunAim)
         assertTrue(deadstorm.buttons.any { it.special == "rotary-left" })

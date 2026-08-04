@@ -17,11 +17,13 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
     private val heldPointers = mutableMapOf<Int, ArcadeControlButton>()
     private val pointerDownTimes = mutableMapOf<Int, Long>()
     private val pulsedButtons = mutableMapOf<ArcadeControlButton, Long>()
-    private val controllerHeld = mutableSetOf<ArcadeControlButton>()
+    private val controllerHeld = mutableMapOf<Int, MutableSet<ArcadeControlButton>>()
+    private val controllerPlayers = mutableMapOf<Int, Int>()
     private var profileName = ""
     private var layout = ArcadeControlLayout(emptyList())
-    private var aimX = 128
-    private var aimY = 128
+    private val aimX = intArrayOf(128, 128)
+    private val aimY = intArrayOf(128, 128)
+    private var secondaryAimActive = false
     private var rotaryEncoder = 0
     private var rotaryRepeatRunning = false
 
@@ -57,10 +59,12 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         pointerDownTimes.clear()
         pulsedButtons.clear()
         controllerHeld.clear()
+        controllerPlayers.clear()
         profileName = profile
         layout = TeknoParrotArcadeControlProfiles.forProfile(profile)
-        aimX = 128
-        aimY = 128
+        aimX.fill(128)
+        aimY.fill(128)
+        secondaryAimActive = false
         rotaryEncoder = 0
         visibility = if (layout.buttons.isEmpty()) GONE else VISIBLE
         publish()
@@ -75,12 +79,16 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = 2f
             paint.color = Color.argb(120, 255, 255, 255)
-            canvas.drawCircle(aimX / 255f * width, aimY / 255f * height, 16f, paint)
+            canvas.drawCircle(aimX[0] / 255f * width, aimY[0] / 255f * height, 16f, paint)
+            if (secondaryAimActive) {
+                paint.color = Color.argb(150, 64, 220, 255)
+                canvas.drawCircle(aimX[1] / 255f * width, aimY[1] / 255f * height, 20f, paint)
+            }
             paint.style = Paint.Style.FILL
         }
 
         buttonRects().forEach { (button, rect) ->
-            val down = heldPointers.containsValue(button) || controllerHeld.contains(button) ||
+            val down = heldPointers.containsValue(button) || controllerButtons().contains(button) ||
                 pulsedButtons.containsKey(button)
             paint.color = if (down) Color.argb(210, 255, 116, 32)
                 else Color.argb(145, 22, 22, 26)
@@ -103,8 +111,8 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
                 val button = buttonRects().firstOrNull { it.second.contains(x, y) }?.first
                 if (button != null) heldPointers[pointer] = button
                 else if (layout.gun && inAimArea(x, y)) {
-                    heldPointers[pointer] = ArcadeControlButton("TRIGGER", layout.triggerMask)
-                    updateAim(x, y)
+                    heldPointers[pointer] = fireButton(0)
+                    updateAim(0, x, y)
                 }
                 if (heldPointers.containsKey(pointer)) {
                     pointerDownTimes[pointer] = SystemClock.uptimeMillis()
@@ -113,7 +121,9 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
                     val id = event.getPointerId(i)
-                    if (heldPointers[id]?.label == "TRIGGER") updateAim(event.getX(i), event.getY(i))
+                    if (heldPointers[id]?.let(::isFireButton) == true) {
+                        updateAim(0, event.getX(i), event.getY(i))
+                    }
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
@@ -139,28 +149,34 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         return true
     }
 
-    fun onControllerKey(keyCode: Int, down: Boolean): Boolean {
+    fun onControllerKey(deviceId: Int, keyCode: Int, down: Boolean): Boolean {
+        val player = controllerPlayer(deviceId)
         val button = when (keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> semantic("UP")
             KeyEvent.KEYCODE_DPAD_DOWN -> semantic("DOWN")
             KeyEvent.KEYCODE_DPAD_LEFT -> semantic("LEFT") ?: semantic("WHEEL L")
             KeyEvent.KEYCODE_DPAD_RIGHT -> semantic("RIGHT") ?: semantic("WHEEL R")
-            KeyEvent.KEYCODE_BUTTON_X -> action(0)
-            KeyEvent.KEYCODE_BUTTON_Y -> action(1)
+            KeyEvent.KEYCODE_BUTTON_X -> if (layout.gun) fireButton(player) else action(0)
+            KeyEvent.KEYCODE_BUTTON_Y -> if (layout.gun) altTriggerButton(player) else action(1)
             KeyEvent.KEYCODE_BUTTON_A -> action(2)
             KeyEvent.KEYCODE_BUTTON_B -> action(3)
-            KeyEvent.KEYCODE_BUTTON_L1 -> action(4) ?: semantic("CARD")
-            KeyEvent.KEYCODE_BUTTON_R1 -> action(5) ?: semantic("CARD")
-            KeyEvent.KEYCODE_BUTTON_L2 -> if (layout.gun) action(1) else action(4)
-            KeyEvent.KEYCODE_BUTTON_R2 -> if (layout.gun) action(0) else action(5)
-            KeyEvent.KEYCODE_BUTTON_START -> semantic("START")
+            KeyEvent.KEYCODE_BUTTON_L1 -> if (layout.gun) altTriggerButton(player)
+                else action(4) ?: semantic("CARD")
+            KeyEvent.KEYCODE_BUTTON_R1 -> if (layout.gun) fireButton(player)
+                else action(5) ?: semantic("CARD")
+            KeyEvent.KEYCODE_BUTTON_L2 -> if (layout.gun) {
+                if (player == 0 && !hasDedicatedSecondController()) fireButton(1)
+                else altTriggerButton(player)
+            } else action(4)
+            KeyEvent.KEYCODE_BUTTON_R2 -> if (layout.gun) fireButton(player) else action(5)
+            KeyEvent.KEYCODE_BUTTON_START -> startButton(player)
             KeyEvent.KEYCODE_BUTTON_SELECT, KeyEvent.KEYCODE_BUTTON_THUMBL ->
                 ArcadeControlButton("COIN", special = "coin")
             KeyEvent.KEYCODE_BUTTON_THUMBR -> semantic("SERVICE")
             KeyEvent.KEYCODE_BUTTON_MODE -> semantic("TEST")
             else -> null
         } ?: return false
-        if (down) controllerHeld += button else controllerHeld -= button
+        setController(deviceId, button, down)
         updateRotaryRepeat()
         publish()
         invalidate()
@@ -169,23 +185,45 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
 
     fun onControllerMotion(event: MotionEvent): Boolean {
         if (layout.buttons.isEmpty()) return false
+        val player = controllerPlayer(event.deviceId)
         val hatX = event.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hatY = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
-        setController(semantic("LEFT") ?: semantic("WHEEL L"), hatX < -.35f)
-        setController(semantic("RIGHT") ?: semantic("WHEEL R"), hatX > .35f)
-        setController(semantic("UP"), hatY < -.35f)
-        setController(semantic("DOWN"), hatY > .35f)
+        setController(event.deviceId, semantic("LEFT") ?: semantic("WHEEL L"), hatX < -.35f)
+        setController(event.deviceId, semantic("RIGHT") ?: semantic("WHEEL R"), hatX > .35f)
+        setController(event.deviceId, semantic("UP"), hatY < -.35f)
+        setController(event.deviceId, semantic("DOWN"), hatY > .35f)
         val leftTrigger = maxOf(
             event.getAxisValue(MotionEvent.AXIS_LTRIGGER),
             event.getAxisValue(MotionEvent.AXIS_BRAKE))
         val rightTrigger = maxOf(
             event.getAxisValue(MotionEvent.AXIS_RTRIGGER),
             event.getAxisValue(MotionEvent.AXIS_GAS))
-        setController(if (layout.gun) action(1) else action(4), leftTrigger > .2f)
-        setController(if (layout.gun) action(0) else action(5), rightTrigger > .2f)
         if (layout.gun) {
-            aimX = (event.getAxisValue(MotionEvent.AXIS_X).coerceIn(-1f, 1f) * 127f + 128f).toInt()
-            aimY = (event.getAxisValue(MotionEvent.AXIS_Y).coerceIn(-1f, 1f) * 127f + 128f).toInt()
+            if (player == 0 && !hasDedicatedSecondController()) {
+                setController(event.deviceId, altTriggerButton(0), false)
+                setController(event.deviceId, fireButton(1), leftTrigger > .2f)
+            } else {
+                if (player == 0) setController(event.deviceId, fireButton(1), false)
+                setController(event.deviceId, altTriggerButton(player), leftTrigger > .2f)
+            }
+            setController(event.deviceId, fireButton(player), rightTrigger > .2f)
+            updateControllerAim(player,
+                event.getAxisValue(MotionEvent.AXIS_X),
+                event.getAxisValue(MotionEvent.AXIS_Y))
+            if (player == 0 && !hasDedicatedSecondController()) {
+                val secondX = event.getAxisValue(MotionEvent.AXIS_Z)
+                val secondY = event.getAxisValue(MotionEvent.AXIS_RZ)
+                if (secondaryAimActive || kotlin.math.abs(secondX) > .05f ||
+                    kotlin.math.abs(secondY) > .05f) {
+                    secondaryAimActive = true
+                    updateControllerAim(1, secondX, secondY)
+                }
+            } else if (player == 1) {
+                secondaryAimActive = true
+            }
+        } else {
+            setController(event.deviceId, action(4), leftTrigger > .2f)
+            setController(event.deviceId, action(5), rightTrigger > .2f)
         }
         updateRotaryRepeat()
         publish()
@@ -193,10 +231,46 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         return true
     }
 
-    private fun setController(button: ArcadeControlButton?, down: Boolean) {
+    private fun setController(deviceId: Int, button: ArcadeControlButton?, down: Boolean) {
         if (button == null) return
-        if (down) controllerHeld += button else controllerHeld -= button
+        val held = controllerHeld.getOrPut(deviceId) { mutableSetOf() }
+        if (down) held += button else held -= button
+        if (held.isEmpty()) controllerHeld.remove(deviceId)
     }
+
+    private fun controllerPlayer(deviceId: Int): Int =
+        controllerPlayers.getOrPut(deviceId) {
+            when {
+                0 !in controllerPlayers.values -> 0
+                1 !in controllerPlayers.values -> 1
+                else -> 1
+            }
+        }
+
+    private fun hasDedicatedSecondController() =
+        controllerPlayers.values.any { it == 1 }
+
+    private fun controllerButtons(): List<ArcadeControlButton> =
+        controllerHeld.values.flatMap { it }
+
+    private fun fireButton(player: Int): ArcadeControlButton {
+        val mask = if (player == 0) {
+            layout.triggerMask or layout.fireCompanionMask
+        } else {
+            layout.secondaryTriggerMask or layout.secondaryFireCompanionMask
+        }
+        return ArcadeControlButton(if (player == 0) "TRIGGER" else "P2 TRIGGER", mask)
+    }
+
+    private fun altTriggerButton(player: Int): ArcadeControlButton? =
+        if (player == 0) action(1)
+        else layout.secondaryAltTriggerMask.takeIf { it != 0L }
+            ?.let { ArcadeControlButton("P2 ALT", it) }
+
+    private fun startButton(player: Int): ArcadeControlButton? =
+        if (player == 0) semantic("START")
+        else layout.secondaryStartMask.takeIf { it != 0L }
+            ?.let { ArcadeControlButton("P2 START", it) }
 
     private fun action(index: Int): ArcadeControlButton? {
         val actions = layout.buttons
@@ -213,12 +287,12 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
             ?: layout.dpad[label]?.let { ArcadeControlButton(label, it) }
 
     private fun publish() {
-        val held = heldPointers.values + controllerHeld + pulsedButtons.keys
+        val held = heldPointers.values + controllerButtons() + pulsedButtons.keys
         val mask = held.fold(0L) { value, button -> value or button.mask }
         val vitalSensor = if (profileName == "DarkEscape4D") 60 else 128
-        val secondAimX = if (layout.mirrorGunAim) aimX else 128
-        val secondAimY = if (layout.mirrorGunAim) aimY else 128
-        RPCS3.instance.arcadeInput(mask, aimX, aimY, secondAimX, secondAimY,
+        val secondAimX = if (!secondaryAimActive && layout.mirrorGunAim) aimX[0] else aimX[1]
+        val secondAimY = if (!secondaryAimActive && layout.mirrorGunAim) aimY[0] else aimY[1]
+        RPCS3.instance.arcadeInput(mask, aimX[0], aimY[0], secondAimX, secondAimY,
             vitalSensor, vitalSensor, 128,
             rotaryEncoder, 0, 0, 0,
             held.any { it.special == "coin" },
@@ -227,10 +301,10 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
     }
 
     private fun shouldPulse(button: ArcadeControlButton) =
-        button.label == "START" || button.label == "TRIGGER" || button.special == "coin"
+        button.label.endsWith("START") || isFireButton(button) || button.special == "coin"
 
     private fun minimumPulseMs(button: ArcadeControlButton) =
-        if (button.label == "TRIGGER") TRIGGER_PULSE_MS else BUTTON_PULSE_MS
+        if (isFireButton(button)) TRIGGER_PULSE_MS else BUTTON_PULSE_MS
 
     private fun schedulePulseRelease() {
         removeCallbacks(pulseRelease)
@@ -238,16 +312,24 @@ class TeknoParrotArcadeControlsOverlay(context: Context) : View(context) {
         pulsedButtons.values.minOrNull()?.let { postDelayed(pulseRelease, (it - now).coerceAtLeast(1)) }
     }
 
-    private fun updateAim(x: Float, y: Float) {
-        aimX = (x / width * 255).toInt().coerceIn(0, 255)
-        aimY = (y / height * 255).toInt().coerceIn(0, 255)
+    private fun updateAim(player: Int, x: Float, y: Float) {
+        aimX[player] = (x / width * 255).toInt().coerceIn(0, 255)
+        aimY[player] = (y / height * 255).toInt().coerceIn(0, 255)
     }
+
+    private fun updateControllerAim(player: Int, x: Float, y: Float) {
+        aimX[player] = (x.coerceIn(-1f, 1f) * 127f + 128f).toInt()
+        aimY[player] = (y.coerceIn(-1f, 1f) * 127f + 128f).toInt()
+    }
+
+    private fun isFireButton(button: ArcadeControlButton) =
+        button.label.endsWith("TRIGGER")
 
     private fun inAimArea(x: Float, y: Float) =
         x in 0f..width.toFloat() && y in 0f..height.toFloat()
 
     private fun rotaryDirection(): Int {
-        val held = heldPointers.values + controllerHeld
+        val held = heldPointers.values + controllerButtons()
         val left = held.any { it.special == "rotary-left" }
         val right = held.any { it.special == "rotary-right" }
         return when {
