@@ -4082,14 +4082,12 @@ public:
 		// Pinned constant, address of first register
 		m_interp_regs = _ptr(m_thread, get_reg_offset(0));
 
-		// Save host thread's stack pointer
-		const auto native_sp = spu_ptr(&spu_thread::hv_ctx, &rpcs3::hypervisor_context_t::regs);
 #if defined(ARCH_X64)
+		// Save host thread's stack pointer for the x64 long-jump escape.
+		const auto native_sp = spu_ptr(&spu_thread::hv_ctx, &rpcs3::hypervisor_context_t::regs);
 		const auto rsp_name = MetadataAsValue::get(m_context, MDNode::get(m_context, {MDString::get(m_context, "rsp")}));
-#elif defined(ARCH_ARM64)
-		const auto rsp_name = MetadataAsValue::get(m_context, MDNode::get(m_context, {MDString::get(m_context, "sp")}));
-#endif
 		m_ir->CreateStore(m_ir->CreateCall(get_intrinsic<u64>(Intrinsic::read_register), {rsp_name}), native_sp);
+#endif
 
 		// Decode (shift) and load function pointer
 		const auto first = m_ir->CreateLoad(get_type<u8*>(), m_ir->CreateGEP(get_type<u8*>(), m_interp_table, m_ir->CreateLShr(m_interp_op, 32u - m_interp_magn)));
@@ -4313,12 +4311,7 @@ public:
 							const auto arg3 = UndefValue::get(get_type<u32>());
 							const auto _ret = m_ir->CreateCall(if_type, fret, {m_lsptr, m_thread, m_interp_pc, arg3, m_interp_table, m_interp_7f0, m_interp_regs});
 							_ret->setCallingConv(CallingConv::GHC);
-							// A normal tail-call marker is only an optimization hint. LLVM may
-							// leave a frame behind on AArch64, which overflows the host stack
-							// when CellSpurs waits in a self-branching instruction. These
-							// interpreter helpers have an identical GHC signature, so require
-							// the tail call and keep the dynamic interpreter stack constant.
-							_ret->setTailCallKind(CallInst::TCK_MustTail);
+							_ret->setTailCall();
 							m_ir->CreateRetVoid();
 						}
 
@@ -4342,7 +4335,7 @@ public:
 
 							const auto ncall = m_ir->CreateCall(if_type, next_if, {m_lsptr, m_thread, m_interp_pc, next_op, m_interp_table, m_interp_7f0, m_interp_regs});
 							ncall->setCallingConv(CallingConv::GHC);
-							ncall->setTailCallKind(CallInst::TCK_MustTail);
+							ncall->setTailCall();
 							m_ir->CreateRetVoid();
 							m_ir->SetInsertPoint(_stop);
 							m_ir->CreateStore(m_interp_pc, spu_ptr(&spu_thread::pc));
@@ -4406,8 +4399,15 @@ public:
 
 		m_jit.fin();
 
-		// Register interpreter entry point
+		// Register interpreter entry point. ARM64 needs a native gateway so
+		// blocking helpers can escape through a valid saved epilogue instead of
+		// treating the host stack pointer as a code address.
+#ifdef ARCH_ARM64
+		spu_runtime::g_interpreter_target = reinterpret_cast<spu_function_t>(m_jit.get_engine().getPointerToFunction(main_func));
+		spu_runtime::g_interpreter = spu_runtime::g_interpreter_gateway;
+#else
 		spu_runtime::g_interpreter = reinterpret_cast<spu_function_t>(m_jit.get_engine().getPointerToFunction(main_func));
+#endif
 
 		for (u32 i = 0; i < spu_runtime::g_interpreter_table.size(); i++)
 		{

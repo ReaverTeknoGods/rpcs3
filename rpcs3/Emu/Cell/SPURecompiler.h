@@ -168,6 +168,13 @@ public:
 
 	// Interpreter entry point
 	static spu_function_t g_interpreter;
+
+#ifdef ARCH_ARM64
+	// Native-ABI dynamic-interpreter target and the gateway that gives
+	// spu_escape a valid ARM64 unwind destination.
+	static spu_function_t g_interpreter_target;
+	static const spu_function_t g_interpreter_gateway;
+#endif
 };
 
 // SPU Recompiler instance base class

@@ -145,7 +145,8 @@ object TeknoParrotArcadeConfig {
         val tekken6Profiles = setOf("Tekken6", "Tekken6BR")
         val tagProfiles = setOf("ttt2", "ttt2u")
         val tekkenProfiles = tekken6Profiles + tagProfiles
-        val onDemandPpuProfiles = tekkenProfiles + setOf("taikogreen", "taikoyellow")
+        val onDemandPpuProfiles = tekkenProfiles + setOf(
+            "taikogreen", "taikoyellow", "DSPS", "RazingStorm")
         check(RPCS3.instance.settingsSet(
             "Core@@Max LLVM Compile Threads",
             when (profileName) {
@@ -160,7 +161,9 @@ object TeknoParrotArcadeConfig {
         // even though the selected cabinet boots only one. Taiko's 110-module
         // executable similarly reaches a single LLVM module large enough to
         // exhaust Scudo even with one worker. Compile reachable modules on
-        // demand instead; warm boots remain cache-backed.
+        // demand instead; warm boots remain cache-backed. DSPS and Razing
+        // Storm can exceed the phone's practical memory ceiling while applying
+        // their full precompiled trees, before the main PPU thread is started.
         check(RPCS3.instance.settingsSet(
             "Core@@LLVM Precompilation",
             (profileName !in onDemandPpuProfiles).toString()

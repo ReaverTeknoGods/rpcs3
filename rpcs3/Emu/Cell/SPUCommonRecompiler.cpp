@@ -639,6 +639,57 @@ DECLARE(spu_runtime::g_interpreter_table) = {};
 
 DECLARE(spu_runtime::g_interpreter) = nullptr;
 
+#ifdef ARCH_ARM64
+DECLARE(spu_runtime::g_interpreter_target) = nullptr;
+
+DECLARE(spu_runtime::g_interpreter_gateway) = build_function_asm<spu_function_t>("spu_interpreter_gateway", [](native_asm& c, auto& args)
+{
+	using namespace asmjit;
+
+	// Unlike the recompiler gateway, the dynamic interpreter uses the native
+	// ABI. It still needs a stable escape target because blocking channel and
+	// STOP helpers can long-jump through spu_runtime::g_escape.
+	const u32 hv_regs_base = ::offset32(&spu_thread::hv_ctx, &rpcs3::hypervisor_context_t::regs);
+	c.mov(a64::x15, args[0]);
+	c.mov(a64::x14, Imm(hv_regs_base));
+	c.add(a64::x14, a64::x14, a64::x15);
+
+	auto epilogue_addr = c.newLabel();
+	c.adr(a64::x15, epilogue_addr);
+	c.mov(a64::x16, a64::sp);
+
+	c.stp(a64::x15, a64::x16, arm::Mem(a64::x14));
+	c.stp(a64::x18, a64::x19, arm::Mem(a64::x14, 16));
+	c.stp(a64::x20, a64::x21, arm::Mem(a64::x14, 32));
+	c.stp(a64::x22, a64::x23, arm::Mem(a64::x14, 48));
+	c.stp(a64::x24, a64::x25, arm::Mem(a64::x14, 64));
+	c.stp(a64::x26, a64::x27, arm::Mem(a64::x14, 80));
+	c.stp(a64::x28, a64::x29, arm::Mem(a64::x14, 96));
+	c.str(a64::x30, arm::Mem(a64::x14, 112));
+
+	// x19 is callee-saved in the native ABI and g_escape also restores it to
+	// the thread pointer before branching to this epilogue.
+	c.mov(a64::x19, args[0]);
+	c.mov(a64::x15, Imm(reinterpret_cast<u64>(&spu_runtime::g_interpreter_target)));
+	c.ldr(a64::x15, arm::Mem(a64::x15));
+	c.blr(a64::x15);
+
+	c.bind(epilogue_addr);
+	c.mov(a64::x14, Imm(hv_regs_base));
+	c.add(a64::x14, a64::x14, a64::x19);
+	c.ldr(a64::x16, arm::Mem(a64::x14, 8));
+	c.ldp(a64::x18, a64::x19, arm::Mem(a64::x14, 16));
+	c.ldp(a64::x20, a64::x21, arm::Mem(a64::x14, 32));
+	c.ldp(a64::x22, a64::x23, arm::Mem(a64::x14, 48));
+	c.ldp(a64::x24, a64::x25, arm::Mem(a64::x14, 64));
+	c.ldp(a64::x26, a64::x27, arm::Mem(a64::x14, 80));
+	c.ldp(a64::x28, a64::x29, arm::Mem(a64::x14, 96));
+	c.ldr(a64::x30, arm::Mem(a64::x14, 112));
+	c.mov(a64::sp, a64::x16);
+	c.ret(a64::x30);
+});
+#endif
+
 spu_cache::spu_cache(const std::string& loc)
 	: m_file(loc, fs::read + fs::write + fs::create + fs::append)
 {
