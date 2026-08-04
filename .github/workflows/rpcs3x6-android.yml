@@ -276,9 +276,9 @@ jobs:
               --title "RPCS3X6 Android" \
               --notes "Rolling signed arm64-v8a TeknoParrotUI companion build."
           else
-            gh api --method PATCH \
-              "repos/$GITHUB_REPOSITORY/git/refs/tags/$rolling_tag" \
-              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            # The updater consumes the rolling release assets and their metadata.
+            # Avoid force-moving the tag ref: GitHub's Actions token may not be
+            # permitted to update an existing tag even with contents: write.
             gh release edit "$rolling_tag" --repo "$GITHUB_REPOSITORY" --title "RPCS3X6 Android $VERSION_NAME"
           fi
           gh release upload "$rolling_tag" --repo "$GITHUB_REPOSITORY" --clobber \
