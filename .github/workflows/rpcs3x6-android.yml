@@ -2,6 +2,17 @@ name: RPCS3X6 Android
 
 on:
   workflow_dispatch:
+    inputs:
+      signed_test:
+        description: "Build a production-signed release APK without publishing it"
+        required: false
+        default: false
+        type: boolean
+      signed_test_version:
+        description: "Four-part version reserved for the signed test and its later release tag"
+        required: false
+        default: "0.0.116.38"
+        type: string
   push:
     tags:
       - "rpcs3x6-v*"
@@ -43,6 +54,7 @@ jobs:
       artifact_name: ${{ steps.package.outputs.artifact_name }}
       asset_name: ${{ steps.package.outputs.asset_name }}
       version_name: ${{ steps.version.outputs.version_name }}
+      signed_build: ${{ steps.version.outputs.signed_build }}
       release_build: ${{ steps.version.outputs.release_build }}
 
     steps:
@@ -84,10 +96,14 @@ jobs:
       - name: Derive Android version and variant
         id: version
         shell: bash
+        env:
+          SIGNED_TEST: ${{ inputs.signed_test }}
+          SIGNED_TEST_VERSION: ${{ inputs.signed_test_version }}
         run: |
           set -euo pipefail
           if [[ "${GITHUB_REF}" == refs/tags/rpcs3x6-v* ]]; then
             version_name="${GITHUB_REF_NAME#rpcs3x6-v}"
+            signed_build=true
             release_build=true
             [[ "$version_name" =~ ^0\.0\.([0-9]+)\.([0-9]+)$ ]] || {
               echo "Tagged RPCS3X6 releases must use 0.0.BUILD.REVISION" >&2
@@ -100,8 +116,24 @@ jobs:
               exit 1
             }
             version_code=$((10#$build_number * 100 + 10#$revision_number))
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" && "$SIGNED_TEST" == "true" ]]; then
+            version_name="$SIGNED_TEST_VERSION"
+            signed_build=true
+            release_build=false
+            [[ "$version_name" =~ ^0\.0\.([0-9]+)\.([0-9]+)$ ]] || {
+              echo "Signed RPCS3X6 tests must use 0.0.BUILD.REVISION" >&2
+              exit 1
+            }
+            build_number="${BASH_REMATCH[1]}"
+            revision_number="${BASH_REMATCH[2]}"
+            (( 10#$revision_number < 100 )) || {
+              echo "RPCS3X6 test revision must be below 100" >&2
+              exit 1
+            }
+            version_code=$((10#$build_number * 100 + 10#$revision_number))
           else
             version_name="0.0.${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
+            signed_build=false
             release_build=false
             version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
           fi
@@ -111,17 +143,18 @@ jobs:
           }
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "signed_build=$signed_build" >> "$GITHUB_OUTPUT"
           echo "release_build=$release_build" >> "$GITHUB_OUTPUT"
 
       - name: Materialize release signing key
-        if: steps.version.outputs.release_build == 'true'
+        if: steps.version.outputs.signed_build == 'true'
         shell: bash
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
         run: |
           set -euo pipefail
           [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_ALIAS" && -n "$KEYSTORE_KEY_PASSWORD" && -n "$KEYSTORE_STORE_PASSWORD" ]] || {
-            echo "Tagged RPCS3X6 builds require the shared ANDROID_SIGNING_* production secrets" >&2
+            echo "Signed RPCS3X6 builds require the shared ANDROID_SIGNING_* production secrets" >&2
             exit 1
           }
           keystore="$RUNNER_TEMP/rpcs3x6-release.jks"
@@ -138,7 +171,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          if [[ "${{ steps.version.outputs.release_build }}" == "true" ]]; then
+          if [[ "${{ steps.version.outputs.signed_build }}" == "true" ]]; then
             task=:app:assembleRelease
             test_task=:app:testReleaseUnitTest
           else
@@ -153,7 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${{ steps.version.outputs.version_name }}"
-          if [[ "${{ steps.version.outputs.release_build }}" == "true" ]]; then
+          if [[ "${{ steps.version.outputs.signed_build }}" == "true" ]]; then
             source_apk="android/app/build/outputs/apk/release/rpcs3x6-release.apk"
             asset_name="rpcs3x6-${version}-android-arm64.apk"
             artifact_name="rpcs3x6-${version}-android-arm64"
@@ -177,6 +210,7 @@ jobs:
             echo "version=$version"
             echo "abi=arm64-v8a"
             echo "commit=${GITHUB_SHA}"
+            echo "signed=${{ steps.version.outputs.signed_build }}"
             echo "release=${{ steps.version.outputs.release_build }}"
           } > "dist/$asset_name.metadata.txt"
           echo "asset_name=$asset_name" >> "$GITHUB_OUTPUT"
